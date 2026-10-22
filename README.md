@@ -1,48 +1,70 @@
-# Horizon Copilote
+# Horizon Copilot
 
-Copilote IA pour conseillers bancaires (banque fictive Banque Horizon), projet du hackathon Accel AI Innovate Paris.
+AI copilot for bank advisors at a fictional bank (Horizon Bank), built for the Accel AI Innovate Paris hackathon.
+
+The advisor picks a client, gets a 360 view (profile, cards, KPIs, alerts, spending), and asks the agent questions. The agent answers with cited sources and drives the screen live: it highlights dashboard sections and adds charts, tables and metrics as it works.
 
 ```
-Navigateur -> frontend (nginx, page statique) -> agent (FastAPI + LangGraph) -> Aiven PostgreSQL + pgvector
+Browser -> frontend (nginx, static page) -> agent (FastAPI + LangGraph + Claude) -> Aiven PostgreSQL (client data)
+                                                                                -> Aiven OpenSearch (internal bank rules)
 ```
 
 ## Structure
 
-| Dossier | Rôle |
+| Folder | Role |
 |---|---|
-| `frontend/` | Interface conseiller : liste clients, vue 360, alertes, chat avec sources. nginx relaie `/api` vers l'agent. |
-| `agent/` | API FastAPI et graphe LangGraph. L'agent appelle des outils SQL (profil, cartes, dépenses, transactions, alertes), la recherche dans les règles internes (pgvector) et un SQL libre en lecture seule. |
-| `seed-bdd/` | Chargement du dataset Kaggle dans PostgreSQL. |
+| `frontend/` | Advisor UI: client list, 360 view, alerts, streamed chat with sources and agent-driven panels. nginx proxies `/api` to the agent. |
+| `agent/` | FastAPI API and LangGraph graph. The agent calls SQL tools (profile, cards, spending, transactions, alerts), a read-only free-form SQL tool, internal rules search (OpenSearch, BM25) and `ui_*` tools that drive the screen. |
 
-## Lancer en local
+## Run locally
 
 ```bash
-cp .env.example .env   # remplir DATABASE_URL et ANTHROPIC_API_KEY au minimum
+cp .env.example .env   # fill in at least DATABASE_URL, OPENSEARCH_URL and ANTHROPIC_API_KEY
 docker compose up --build
 ```
 
-Puis ouvrir http://localhost:8080. L'API de l'agent est aussi visible sur http://localhost:8000/docs.
+Then open http://localhost:8080. The agent API docs are at http://localhost:8000/docs.
 
-## Déployer sur Aiven Runtime
+For hot reload during development, run `docker compose up --build --watch`: changes to `agent/app` and `frontend/public` are synced into the containers.
 
-1. Pousser le repo sur GitHub.
-2. Console Aiven > Runtime > Deploy application, choisir le repo et `docker-compose.yml`, puis Scan et Deploy.
-3. Sur l'app `agent` : Connected services > Connect service > le PostgreSQL existant, variable `DATABASE_URL`. Ajouter `ANTHROPIC_API_KEY` en secret.
-4. Si le front affiche "Agent injoignable", mettre dans l'app `frontend` la variable `AGENT_URL` avec l'URL publique de l'app `agent`, puis redéployer.
-5. Un push ne redéploie pas automatiquement : Overview > Actions > Deploy latest commit.
+### Environment variables
 
-## Endpoints de l'agent
-
-| Méthode | Route | Description |
+| Variable | Used by | Description |
 |---|---|---|
-| GET | `/health` | État de l'agent et de la base |
-| GET | `/api/clients?q=` | Liste des clients |
-| GET | `/api/clients/{id}` | Vue 360 : profil, cartes, KPIs, alertes, dernières opérations |
-| GET | `/api/clients/{id}/monthly` | Dépenses mensuelles |
-| POST | `/api/chat` | `{client_id, message, thread_id?}` : réponse de l'agent, outils utilisés, latence |
-| POST | `/api/chat/stream` | `{client_id, message, thread_id?, brief?}` : flux SSE (`start`, `step`, `step_done`, `ui`, `token`, `answer`, `error`) ; l'agent pilote l'écran en direct |
-| POST | `/api/clients/{id}/brief` | Fiche de préparation de rendez-vous |
+| `DATABASE_URL` | agent | Aiven PostgreSQL service URI (client data) |
+| `OPENSEARCH_URL` | agent | Aiven OpenSearch service URI (internal rules, credentials included) |
+| `OPENSEARCH_INDEX` | agent | Rules index, default `rules-current` |
+| `ANTHROPIC_API_KEY` | agent | Claude API key |
+| `ANTHROPIC_MODEL` | agent | Default `claude-sonnet-5-5` |
+| `BANK_NAME` | agent | Bank name used in the system prompt |
+| `AGENT_URL` | frontend | Leave empty locally; on Aiven Runtime, the agent app's public URL if needed |
 
-## Données
+## Deploy on Aiven Runtime
 
-Les transactions viennent du dataset Kaggle "Financial Transactions Dataset: Analytics" (synthétique). Les montants sont présentés en euros. Les dates sont décalées pour que la dernière transaction tombe la veille du chargement (décalage tracé dans la table `app_meta`). Les numéros de carte sont masqués et les CVV supprimés.
+1. Push the repo to GitHub.
+2. Aiven console > Runtime > Deploy application, pick the repo and `docker-compose.yml`, then Scan and Deploy.
+3. On the `agent` app: Connected services > Connect service > the existing PostgreSQL, as variable `DATABASE_URL`. Do the same for OpenSearch (`OPENSEARCH_URL`). Add `ANTHROPIC_API_KEY` as a secret.
+4. If the frontend shows "Agent unreachable", set `AGENT_URL` on the `frontend` app to the public URL of the `agent` app, then redeploy.
+5. A push does not redeploy automatically: Overview > Actions > Deploy latest commit.
+
+The database is intentionally not declared in `docker-compose.yml`, otherwise Runtime would create a new PostgreSQL service.
+
+## Agent endpoints
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/health` | Agent and database status |
+| GET | `/api/clients?q=` | Client list |
+| GET | `/api/clients/{id}` | 360 view: profile, cards, KPIs, alerts, recent transactions |
+| GET | `/api/clients/{id}/monthly` | Monthly spending |
+| POST | `/api/chat` | `{client_id, message, thread_id?}`: agent answer, tools used, latency |
+| POST | `/api/chat/stream` | `{client_id, message, thread_id?, brief?}`: SSE stream (`start`, `step`, `step_done`, `ui`, `token`, `answer`, `error`); the agent drives the screen live |
+| POST | `/api/clients/{id}/brief` | Meeting preparation brief |
+
+## Data
+
+Transactions come from the Kaggle dataset "Financial Transactions Dataset: Analytics" (synthetic). Amounts are shown in euros. Dates are shifted so the latest transaction falls on the day before loading (the offset is recorded in the `app_meta` table). Card numbers are masked and CVVs removed.
+
+The database is expected to be loaded already; the loading script (`seed-bdd/`) was removed from the repo in commit `da2c735`.
+
+Internal bank rules are articles from the bank's PDF policies, indexed in OpenSearch. They are written in English.

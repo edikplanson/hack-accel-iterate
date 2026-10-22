@@ -124,14 +124,14 @@ def keyword_ui(client_id: int, message: str) -> list[dict]:
     q = data_fold(message)
     out: list[dict] = []
     try:
-        if _has(q, "depense", "evolution", "3 mois", "trois mois"):
+        if _has(q, "depense", "evolution", "3 mois", "trois mois", "spend", "trend", "3 month", "three month"):
             rows = data.monthly_spending(client_id, 3)
             out.append({"action": "chart", "chart_type": "line", "title": "Dépenses mensuelles (3 mois)",
                         "labels": [r["mois"] for r in rows], "values": [float(r["depenses"]) for r in rows],
                         "series_label": "Dépenses", "note": f"Source : transactions client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "depenses", "level": "positif",
                         "message": "Dépenses récentes du client"})
-        if _has(q, "risque", "incident"):
+        if _has(q, "risque", "incident", "risk"):
             rows = data.incidents_by_month(client_id, 6)
             out.append({"action": "chart", "chart_type": "bar", "title": "Incidents de paiement par mois (6 mois)",
                         "labels": [r["mois"] for r in rows], "values": [int(r["incidents"]) for r in rows],
@@ -139,7 +139,7 @@ def keyword_ui(client_id: int, message: str) -> list[dict]:
                         "note": f"Source : transactions en erreur, client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "dette", "level": "attention",
                         "message": "Niveau d'endettement à surveiller"})
-        if _has(q, "plafond", "carte"):
+        if _has(q, "plafond", "carte", "limit", "card"):
             rows = data.card_spending_vs_limit(client_id)
             out.append({"action": "chart", "chart_type": "bar", "title": "Dépenses 30 jours vs plafond, par carte",
                         "labels": [f"{r['card_brand']} {r['card_type']} {r['card_number_masked']}" for r in rows],
@@ -148,7 +148,7 @@ def keyword_ui(client_id: int, message: str) -> list[dict]:
                         "note": f"Source : cards et transactions, client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "cartes", "level": "positif",
                         "message": "Cartes et plafonds du client"})
-        if _has(q, "produit", "propos"):
+        if _has(q, "produit", "propos", "product", "offer"):
             out.append({"action": "highlight", "section": "revenu", "level": "positif", "message": "Capacité financière"})
             out.append({"action": "highlight", "section": "dette", "level": "attention", "message": "Endettement actuel"})
     except Exception as exc:  # l'écran ne doit jamais faire échouer le chat
