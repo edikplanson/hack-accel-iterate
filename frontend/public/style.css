@@ -207,12 +207,16 @@ body {
 .step-chip.ui { background: #eef5f1; border-color: #b9dccb; color: var(--forest-700); }
 .step-chip.fail { border-color: #fecaca; color: #b91c1c; }
 @media (prefers-reduced-motion: reduce) {
-  .agent-panel, .agent-hl, .step-chip.running .st, .dots span { animation: none; }
-  .bank-card { transition: none; }
+  /* No motion: values, charts, gauges and previews update instantly; a static ring replaces the glow pulse */
+  .agent-panel, .agent-hl, .kpi.agent-hl, .kpi.agent-hl .kpi-spark path, .step-chip.running .st, .dots span,
+  #dashboard [data-section]:not(.kpi) > .agent-note { animation: none; }
+  .bank-card, .stage-chart, .stage-preview, .gauge > span, .hbar > span, .kpi .kpi-label::after, .bc-gauge, .bc-usage, .kpi-spark path { transition: none; }
+  .is-fading { transform: none; }
+  .agent-hl { box-shadow: 0 0 0 2px color-mix(in srgb, var(--hl) 45%, transparent); }
 }
 /* ---------- Agent insight stage: sticky, the visuals come to the advisor ---------- */
 /* Sticky dock: its ivory top padding hides what scrolls between the header and the stage */
-#dashboard > .stage-dock { position: sticky; top: -24px; z-index: 20; margin: 0 -24px; padding: 24px 24px 0; background: var(--ivory); overflow-anchor: none; }
+#dashboard > .stage-dock { position: sticky; top: -24px; z-index: 20; margin: -24px -24px 0; padding: 24px 24px 0; background: var(--ivory); overflow-anchor: none; }
 /* The model's panels change height between answers: never use them as the scroll anchor, so the view does not jump */
 #agent-canvas { overflow-anchor: none; }
 .insight-stage {
