@@ -188,7 +188,7 @@ body {
 }
 /* ---------- Agent insight stage: sticky, the visuals come to the advisor ---------- */
 /* Sticky dock: its ivory top padding hides what scrolls between the header and the stage */
-#dashboard > .stage-dock { position: sticky; top: -24px; z-index: 20; margin-top: 0; padding-top: 24px; background: var(--ivory); overflow-anchor: none; }
+#dashboard > .stage-dock { position: sticky; top: -24px; z-index: 20; margin: 0 -24px; padding: 24px 24px 0; background: var(--ivory); overflow-anchor: none; }
 /* The model's panels change height between answers: never use them as the scroll anchor, so the view does not jump */
 #agent-canvas { overflow-anchor: none; }
 .insight-stage {
