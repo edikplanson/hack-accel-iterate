@@ -2,31 +2,32 @@ const API = "/api";
 const state = { clientId: null, threadId: null, chart: null, agentCharts: [], busy: false, abort: null };
 
 const TOOL_LABELS = {
-  get_client_profile: "Profil",
-  get_cards: "Cartes",
-  get_spending_summary: "Dépenses",
-  get_recent_transactions: "Transactions",
-  get_client_alerts: "Alertes",
-  search_bank_rules: "Règles internes",
-  get_bank_rule: "Article de règle",
-  run_readonly_sql: "Requête SQL",
-  ui_show_chart: "Graphique",
-  ui_highlight: "Mise en avant",
-  ui_show_table: "Tableau",
-  ui_show_metric: "Indicateur",
+  get_client_profile: "PostgreSQL · Profile",
+  get_cards: "PostgreSQL · Cards",
+  get_spending_summary: "PostgreSQL · Spending",
+  get_recent_transactions: "PostgreSQL · Transactions",
+  get_client_alerts: "PostgreSQL · Alerts",
+  search_bank_rules: "Checking internal rules",
+  get_bank_rule: "Reading a rule article",
+  run_readonly_sql: "PostgreSQL query",
+  ui_show_chart: "Chart",
+  ui_highlight: "Highlight",
+  ui_show_table: "Table",
+  ui_show_metric: "Metric",
 };
 
 const SUGGESTIONS = [
-  "Quels sont les risques sur ce client ?",
-  "Peut-on augmenter le plafond de sa carte ?",
-  "Comment ont évolué ses dépenses sur 3 mois ?",
-  "Quel produit lui proposer ?",
+  "What are the risks for this client?",
+  "Can we raise their card limit?",
+  "How has their spending changed over 3 months?",
+  "Which product should we offer them?",
 ];
 
+const LOCALE = "en-GB";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const eur = (v) => (v == null ? "n/d" : new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v));
-const dateFr = (v) => (v ? new Date(v).toLocaleDateString("fr-FR") : "n/d");
+const eur = (v) => (v == null ? "n/a" : new Intl.NumberFormat(LOCALE, { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v));
+const fmtDate = (v) => (v ? new Date(v).toLocaleDateString(LOCALE) : "n/a");
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -34,7 +35,7 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-// Flux SSE de l'agent : chaque événement "event: x / data: {...}" appelle handlers[x](données)
+// Agent SSE stream: each "event: x / data: {...}" event calls handlers[x](data)
 async function streamChat(body, handlers, signal) {
   const res = await fetch(API + "/chat/stream", {
     method: "POST",
@@ -56,7 +57,7 @@ async function streamChat(body, handlers, signal) {
     try {
       handlers[event](JSON.parse(data));
     } catch (e) {
-      console.error("événement", event, e); // un événement mal formé ne coupe pas le flux
+      console.error("event", event, e); // a malformed event does not break the stream
     }
   };
   for (;;) {
@@ -73,7 +74,7 @@ async function streamChat(body, handlers, signal) {
   if (buf.trim()) dispatch(buf);
 }
 
-/* ---------- Liste des clients ---------- */
+/* ---------- Client list ---------- */
 async function loadClients(q = "") {
   const list = $("client-list");
   try {
@@ -82,44 +83,46 @@ async function loadClients(q = "") {
       <li class="client-item px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${c.client_id === state.clientId ? "active" : ""}"
           data-id="${c.client_id}">
         <div class="flex items-center gap-2">
-          <span class="font-medium client-name">${esc(c.nom || `Client n°${c.client_id}`)}</span>
-          ${c.card_compromised ? '<span class="w-2 h-2 rounded-full bg-red-500" title="Carte compromise"></span>' : ""}
-          <span class="ml-auto text-xs text-slate-400">n°${c.client_id}</span>
+          <span class="font-medium client-name">${esc(c.nom || `Client #${c.client_id}`)}</span>
+          ${c.card_compromised ? '<span class="w-2 h-2 rounded-full bg-red-500" title="Compromised card"></span>' : ""}
+          <span class="ml-auto text-xs text-slate-400">#${c.client_id}</span>
         </div>
-        <div class="text-xs text-slate-500">${esc(c.age)} ans · score ${esc(c.credit_score)} · ${esc(c.nb_cards)} carte(s)</div>
-      </li>`).join("") || '<li class="p-4 text-slate-400">Aucun client</li>';
+        <div class="text-xs text-slate-500">${esc(c.age)} y/o · score ${esc(c.credit_score)} · ${esc(c.nb_cards)} card(s)</div>
+      </li>`).join("") || '<li class="p-4 text-slate-400">No clients</li>';
     list.querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => selectClient(Number(li.dataset.id))));
   } catch (e) {
-    list.innerHTML = `<li class="p-4 text-red-600 text-xs">Impossible de charger les clients : ${esc(e.message)}</li>`;
+    list.innerHTML = `<li class="p-4 text-red-600 text-xs">Could not load clients: ${esc(e.message)}</li>`;
   }
 }
 
-/* ---------- Vue 360 ---------- */
+/* ---------- 360 view ---------- */
+// Level values come from the agent API (French identifiers); only their display labels are translated
 const LEVEL_STYLE = {
   critique: "bg-red-50 text-red-700 border-red-200",
   attention: "bg-amber-50 text-amber-800 border-amber-200",
   info: "bg-sky-50 text-sky-800 border-sky-200",
   positif: "bg-emerald-50 text-emerald-800 border-emerald-200",
 };
+const LEVEL_LABEL = { critique: "Critical", attention: "Warning", info: "Info", positif: "Positive" };
 
 async function selectClient(id) {
-  if (state.abort) state.abort.abort(); // la réponse en cours concernait l'ancien client
+  if (state.abort) state.abort.abort(); // the pending answer was about the previous client
   resetAgentCanvas();
   state.clientId = id;
   state.threadId = null;
   document.querySelectorAll(".client-item").forEach((li) => li.classList.toggle("active", Number(li.dataset.id) === id));
-  $("chat-client").textContent = document.querySelector(`.client-item[data-id="${id}"] .client-name`)?.textContent || `client n°${id}`;
+  $("chat-client").textContent = document.querySelector(`.client-item[data-id="${id}"] .client-name`)?.textContent || `client #${id}`;
   ["chat-input", "send-btn", "brief-btn"].forEach((k) => ($(k).disabled = false));
   $("messages").innerHTML = "";
   renderSuggestions();
 
   const main = $("dashboard");
-  main.innerHTML = '<div class="text-slate-400">Chargement…</div>';
+  main.innerHTML = '<div class="text-slate-400">Loading…</div>';
   try {
     const [d, monthly] = await Promise.all([api(`/clients/${id}`), api(`/clients/${id}/monthly?months=12`)]);
     renderDashboard(d, monthly);
   } catch (e) {
-    main.innerHTML = `<div class="text-red-600">Erreur : ${esc(e.message)}</div>`;
+    main.innerHTML = `<div class="text-red-600">Error: ${esc(e.message)}</div>`;
   }
 }
 
@@ -128,63 +131,64 @@ function renderDashboard(d, monthly) {
   const alerts = d.alertes.length
     ? d.alertes.map((a) => `
         <div class="border rounded-lg px-3 py-2 text-sm flex items-center gap-2 ${LEVEL_STYLE[a.niveau] || LEVEL_STYLE.info}">
-          <span class="font-medium capitalize">${esc(a.niveau)}</span><span>${esc(a.message)}</span>
+          <span class="font-medium">${esc(LEVEL_LABEL[a.niveau] || a.niveau)}</span><span>${esc(a.message)}</span>
           <span class="ml-auto text-xs opacity-70">${esc(a.source)}</span>
         </div>`).join("")
-    : '<div class="text-sm text-slate-400">Aucune alerte</div>';
+    : '<div class="text-sm text-slate-400">No alerts</div>';
 
   const cards = d.cartes.map((c) => `
       <div class="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 text-sm">
         <div>
           <div class="font-medium">${esc(c.card_brand)} ${esc(c.card_type)} ${esc(c.card_number_masked)}</div>
-          <div class="text-xs text-slate-500">Expire le ${dateFr(c.expires)} · plafond ${eur(c.credit_limit)}</div>
+          <div class="text-xs text-slate-500">Expires ${fmtDate(c.expires)} · limit ${eur(c.credit_limit)}</div>
         </div>
-        ${c.card_on_dark_web ? '<span class="text-xs text-red-600 font-medium">Compromise</span>' : c.expired ? '<span class="text-xs text-slate-400">Expirée</span>' : '<span class="text-xs text-emerald-700">Active</span>'}
+        ${c.card_on_dark_web ? '<span class="text-xs text-red-600 font-medium">Compromised</span>' : c.expired ? '<span class="text-xs text-slate-400">Expired</span>' : '<span class="text-xs text-emerald-700">Active</span>'}
       </div>`).join("");
 
   const cats = d.categories_30j.map((c) => `
       <div class="flex justify-between py-1 text-sm"><span class="truncate pr-2">${esc(c.categorie)}</span><span class="font-medium">${eur(c.total)}</span></div>`).join("")
-    || '<div class="text-sm text-slate-400">Pas de dépense sur la période</div>';
+    || '<div class="text-sm text-slate-400">No spending over the period</div>';
 
   const tx = d.dernieres_transactions.map((t) => `
       <tr class="border-b border-slate-100 last:border-0">
-        <td class="py-1.5">${dateFr(t.tx_date)}</td>
+        <td class="py-1.5">${fmtDate(t.tx_date)}</td>
         <td class="py-1.5 truncate max-w-[220px]">${esc(t.categorie)}</td>
         <td class="py-1.5">${esc(t.merchant_city)}</td>
         <td class="py-1.5 text-right ${t.amount < 0 ? "text-emerald-700" : ""}">${eur(t.amount)}</td>
         <td class="py-1.5 text-xs text-red-600">${esc(t.errors || "")}</td>
       </tr>`).join("");
 
+  // data-section values are the section ids the agent targets with ui_highlight: keep them as is
   $("dashboard").innerHTML = `
     <div class="flex items-end gap-3">
       <div>
-        <h1 class="text-2xl font-semibold">${esc(p.nom || `Client n°${p.client_id}`)}</h1>
-        <div class="text-sm text-slate-500">Client n°${p.client_id} · ${esc(p.age)} ans · ${esc(p.gender)} · ${esc(p.address)}</div>
+        <h1 class="text-2xl font-semibold">${esc(p.nom || `Client #${p.client_id}`)}</h1>
+        <div class="text-sm text-slate-500">Client #${p.client_id} · ${esc(p.age)} y/o · ${esc(p.gender)} · ${esc(p.address)}</div>
       </div>
-      <div class="ml-auto text-xs text-slate-400">Données au ${dateFr(k.date_reference)}</div>
+      <div class="ml-auto text-xs text-slate-400">Data as of ${fmtDate(k.date_reference)}</div>
     </div>
 
-    <div id="agent-canvas" class="space-y-4"></div>
+    <div id="agent-canvas" class="agent-viz space-y-4"></div>
 
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
-      <div class="card" data-section="revenu"><div class="kpi-label">Revenu annuel</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
-      <div class="card" data-section="dette"><div class="kpi-label">Dette totale</div><div class="kpi-value">${eur(p.total_debt)}</div>
-        <div class="text-xs text-slate-500 mt-1">${p.debt_to_income_ratio == null ? "n/d" : p.debt_to_income_ratio.toLocaleString("fr-FR")} fois le revenu annuel</div></div>
-      <div class="card" data-section="score"><div class="kpi-label">Score de crédit</div><div class="kpi-value">${esc(p.credit_score)}</div></div>
-      <div class="card" data-section="depenses"><div class="kpi-label">Dépenses 30 jours</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
-        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} opérations · ${esc(k.incidents_30j)} incident(s)</div></div>
+      <div class="card" id="kpi-revenu" data-section="revenu"><div class="kpi-label">Annual income</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
+      <div class="card" id="kpi-dette" data-section="dette"><div class="kpi-label">Total debt</div><div class="kpi-value">${eur(p.total_debt)}</div>
+        <div class="text-xs text-slate-500 mt-1">${p.debt_to_income_ratio == null ? "n/a" : p.debt_to_income_ratio.toLocaleString(LOCALE)}× annual income</div></div>
+      <div class="card" id="kpi-score" data-section="score"><div class="kpi-label">Credit score</div><div class="kpi-value">${esc(p.credit_score)}</div></div>
+      <div class="card" id="kpi-depenses" data-section="depenses"><div class="kpi-label">30-day spending</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
+        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div></div>
     </div>
 
     <div class="space-y-2" data-section="alertes">${alerts}</div>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <div class="card" data-section="cartes"><div class="font-semibold mb-2">Cartes</div>${cards || '<div class="text-sm text-slate-400">Aucune carte</div>'}</div>
-      <div class="card" data-section="categories"><div class="font-semibold mb-2">Top dépenses 30 jours</div>${cats}</div>
+      <div class="card" id="section-cartes" data-section="cartes"><div class="font-semibold mb-2">Cards</div>${cards || '<div class="text-sm text-slate-400">No cards</div>'}</div>
+      <div class="card" data-section="categories"><div class="font-semibold mb-2">Top spending, 30 days</div>${cats}</div>
     </div>
 
-    <div class="card" data-section="mensuel"><div class="font-semibold mb-2">Dépenses mensuelles</div><div class="h-56"><canvas id="monthly-chart"></canvas></div></div>
+    <div class="card" data-section="mensuel"><div class="font-semibold mb-2">Monthly spending</div><div class="h-56"><canvas id="monthly-chart"></canvas></div></div>
 
-    <div class="card overflow-x-auto" data-section="transactions"><div class="font-semibold mb-2">Dernières opérations</div>
+    <div class="card overflow-x-auto" data-section="transactions"><div class="font-semibold mb-2">Recent transactions</div>
       <table class="w-full text-sm"><tbody>${tx}</tbody></table></div>`;
 
   if (state.chart) state.chart.destroy();
@@ -195,7 +199,7 @@ function renderDashboard(d, monthly) {
   });
 }
 
-/* ---------- Écran piloté par l'agent (événements "ui") ---------- */
+/* ---------- Agent-driven screen ("ui" events) ---------- */
 const LEVELS = ["critique", "attention", "info", "positif"];
 const HL_CLASSES = ["agent-hl", ...LEVELS.map((l) => `hl-${l}`)];
 const METRIC_COLOR = { critique: "text-red-700", attention: "text-amber-700", info: "text-sky-700", positif: "text-emerald-700" };
@@ -213,7 +217,7 @@ function clearHighlights() {
   document.querySelectorAll(".agent-note").forEach((n) => n.remove());
 }
 
-// Panneau commun : badge Agent, titre, contenu, note optionnelle, bouton × ; ajouté en tête du canvas
+// Shared panel: Agent badge, title, body, optional note, × button; prepended to the canvas
 function agentPanel(title, bodyHtml, note, onClose) {
   const panel = document.createElement("div");
   panel.className = "card agent-panel";
@@ -221,7 +225,7 @@ function agentPanel(title, bodyHtml, note, onClose) {
     <div class="flex items-center gap-2 mb-2">
       <span class="agent-badge">Agent</span>
       <span class="font-semibold">${esc(title)}</span>
-      <button type="button" class="ml-auto text-slate-400 hover:text-slate-700 text-lg leading-none" title="Fermer">×</button>
+      <button type="button" class="ml-auto text-slate-400 hover:text-slate-700 text-lg leading-none" title="Close">×</button>
     </div>
     ${bodyHtml}
     ${note ? `<div class="text-xs text-slate-500 mt-2">${esc(note)}</div>` : ""}`;
@@ -237,6 +241,7 @@ function agentPanel(title, bodyHtml, note, onClose) {
 function showChart(ui) {
   const pie = ui.chart_type === "pie";
   const type = ["bar", "line", "pie"].includes(ui.chart_type) ? ui.chart_type : "bar";
+  const fmt = (v) => (ui.unit === "count" ? String(v) : eur(v));
   let chart = null;
   const panel = agentPanel(ui.title, '<div class="h-56"><canvas></canvas></div>', ui.note, () => {
     chart.destroy();
@@ -252,18 +257,26 @@ function showChart(ui) {
         backgroundColor: pie ? PIE_COLORS : type === "line" ? "rgba(4,120,87,.12)" : "#047857",
         borderColor: pie ? "#fff" : "#047857",
         fill: type === "line",
-        tension: 0.3,
+        tension: 0.35,
         borderRadius: type === "bar" ? 4 : 0,
         maxBarThickness: 48,
-      }],
+      }, ...(Array.isArray(ui.values2) ? [{
+        label: ui.series_label2 || "",
+        data: ui.values2,
+        backgroundColor: "#a7f3d0",
+        borderColor: "#6ee7b7",
+        borderRadius: 4,
+        maxBarThickness: 48,
+      }] : [])],
     },
     options: {
       maintainAspectRatio: false,
+      animation: { duration: 1200, easing: "easeOutQuart" },
       plugins: {
-        legend: { display: pie, position: "right" },
-        tooltip: pie ? {} : { callbacks: { label: (c) => eur(c.parsed.y) } },
+        legend: { display: pie || Array.isArray(ui.values2), position: pie ? "right" : "top" },
+        tooltip: pie ? {} : { callbacks: { label: (c) => (fmt(c.parsed.y)) } },
       },
-      scales: pie ? {} : { y: { ticks: { callback: (v) => eur(v) } } },
+      scales: pie ? {} : { y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } } },
     },
   });
   state.agentCharts.push(chart);
@@ -287,7 +300,7 @@ function highlight(ui) {
   const el = document.querySelector(`#dashboard [data-section="${CSS.escape(String(ui.section))}"]`);
   if (!el) return;
   el.classList.remove(...HL_CLASSES);
-  void el.offsetWidth; // relance l'animation si la zone était déjà encadrée
+  void el.offsetWidth; // restarts the animation if the area was already outlined
   el.classList.add("agent-hl", `hl-${level(ui.level)}`);
   el.querySelector(":scope > .agent-note")?.remove();
   const note = document.createElement("div");
@@ -298,7 +311,7 @@ function highlight(ui) {
 }
 
 function applyUi(ui) {
-  if (!ui || !$("agent-canvas")) return; // vue 360 pas encore chargée
+  if (!ui || !$("agent-canvas")) return; // 360 view not loaded yet
   const fn = { chart: showChart, table: showTable, metric: showMetric, highlight }[ui.action];
   if (fn) fn(ui);
 }
@@ -328,7 +341,7 @@ function renderAnswer(answer) {
 
 const scrollChat = () => ($("messages").scrollTop = $("messages").scrollHeight);
 
-// Bulle assistant en 4 zones : pastilles d'étapes, pensées, texte en direct, pied (latence)
+// Assistant bubble in 4 zones: step chips, thoughts, live text, footer (latency)
 function assistantBubble(clientId) {
   const wrap = addMessage("assistant", `
     <div class="b-steps bubble-zone flex flex-wrap gap-1 mb-2"></div>
@@ -341,17 +354,17 @@ function assistantBubble(clientId) {
   const b = { finished: false };
   const setLive = (t) => {
     live = t;
-    z(".b-live").textContent = t; // texte brut : textContent échappe
+    z(".b-live").textContent = t; // plain text: textContent escapes
   };
-  const current = () => state.clientId === clientId; // ignore un flux d'un client quitté
+  const current = () => state.clientId === clientId; // ignore a stream for a client we have left
 
   b.fail = (msg) => {
     b.finished = true;
-    if (current()) state.threadId = null; // un tour interrompu peut laisser le fil incohérent : on repart proprement
+    if (current()) state.threadId = null; // an interrupted turn can leave the thread inconsistent: start fresh
     if (!live) z(".b-live").textContent = "";
     const err = document.createElement("div");
     err.className = "text-red-600 mt-1";
-    err.textContent = `Erreur : ${msg}`;
+    err.textContent = `Error: ${msg}`;
     z(".b-live").after(err);
     scrollChat();
   };
@@ -371,6 +384,7 @@ function assistantBubble(clientId) {
       chip.className = `step-chip running${d.tool.startsWith("ui_") ? " ui" : ""}`;
       chip.innerHTML = '<span class="lbl"></span><span class="st">…</span>';
       chip.querySelector(".lbl").textContent = TOOL_LABELS[d.tool] || d.tool;
+      chip.dataset.tool = d.tool;
       z(".b-steps").appendChild(chip);
       chips.set(d.id, chip);
       scrollChat();
@@ -378,6 +392,11 @@ function assistantBubble(clientId) {
     step_done: (d) => {
       const chip = chips.get(d.id);
       if (!chip) return;
+      if (!d.ok && ["search_bank_rules", "get_bank_rule"].includes(chip.dataset.tool)) {
+        console.warn("Internal rules unavailable", d); // no error badge in the UI
+        chip.remove();
+        return;
+      }
       chip.classList.remove("running");
       chip.classList.toggle("fail", !d.ok);
       chip.querySelector(".st").textContent = d.ok ? "✓" : "✗";
@@ -401,7 +420,7 @@ function assistantBubble(clientId) {
       z(".b-foot").appendChild(foot);
       scrollChat();
     },
-    error: (d) => b.fail(d.message || "erreur inconnue"),
+    error: (d) => b.fail(d.message || "unknown error"),
   };
   return b;
 }
@@ -410,19 +429,21 @@ async function send(message, brief = false) {
   if (!state.clientId || state.busy) return;
   const text = (message ?? "").trim();
   if (!brief && !text) {
-    showError("Écrivez une question d'abord");
+    showError("Type a question first");
     return;
   }
   showError("");
   clearHighlights();
+  resetAgentCanvas();
+  if ($("agent-canvas")) $("agent-canvas").innerHTML = "";
   state.busy = true;
   state.abort = new AbortController();
   $("send-btn").disabled = $("brief-btn").disabled = true;
-  addMessage("user", esc(brief ? "Préparer ma fiche de rendez-vous" : text));
+  addMessage("user", esc(brief ? "Prepare my meeting brief" : text));
   const bubble = assistantBubble(state.clientId);
   try {
     await streamChat({ client_id: state.clientId, message: text, thread_id: state.threadId, brief }, bubble.handlers, state.abort.signal);
-    if (!bubble.finished) bubble.fail("flux interrompu avant la réponse");
+    if (!bubble.finished) bubble.fail("stream ended before the answer");
   } catch (e) {
     if (e.name !== "AbortError") bubble.fail(e.message);
   } finally {
@@ -438,7 +459,7 @@ function showError(msg) {
   $("chat-error").classList.toggle("hidden", !msg);
 }
 
-/* ---------- Initialisation ---------- */
+/* ---------- Init ---------- */
 $("chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = $("chat-input").value;
@@ -454,7 +475,7 @@ $("search").addEventListener("input", (e) => {
 });
 
 fetch("/health/agent").then((r) => r.json()).then((h) => {
-  $("status").textContent = h.db ? "Base connectée" : "Base injoignable";
-}).catch(() => ($("status").textContent = "Agent injoignable"));
+  $("status").textContent = h.db ? "Database connected" : "Database unreachable";
+}).catch(() => ($("status").textContent = "Agent unreachable"));
 
 loadClients();

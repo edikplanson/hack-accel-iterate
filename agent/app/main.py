@@ -99,6 +99,7 @@ def _run(client_id: int, message: str, thread_id: str | None):
         "answer": _text(msgs[-1].content),
         "steps": steps,
         "latency_s": round(time.perf_counter() - t0, 2),
+        "ui": keyword_ui(client_id, message),
     }
 
 
@@ -114,6 +115,52 @@ def brief(client_id: int):
     return _run(client_id, BRIEF_PROMPT, None)
 
 
+def _has(text: str, *words: str) -> bool:
+    return any(w in text for w in words)
+
+
+def keyword_ui(client_id: int, message: str) -> list[dict]:
+    """Ordres d'affichage déclenchés par mots-clés de la question. Les valeurs viennent de PostgreSQL, jamais du LLM."""
+    q = data_fold(message)
+    out: list[dict] = []
+    try:
+        if _has(q, "depense", "evolution", "3 mois", "trois mois", "spend", "trend", "3 month", "three month"):
+            rows = data.monthly_spending(client_id, 3)
+            out.append({"action": "chart", "chart_type": "line", "title": "Dépenses mensuelles (3 mois)",
+                        "labels": [r["mois"] for r in rows], "values": [float(r["depenses"]) for r in rows],
+                        "series_label": "Dépenses", "note": f"Source : transactions client {client_id} (PostgreSQL)"})
+            out.append({"action": "highlight", "section": "depenses", "level": "positif",
+                        "message": "Dépenses récentes du client"})
+        if _has(q, "risque", "incident", "risk"):
+            rows = data.incidents_by_month(client_id, 6)
+            out.append({"action": "chart", "chart_type": "bar", "title": "Incidents de paiement par mois (6 mois)",
+                        "labels": [r["mois"] for r in rows], "values": [int(r["incidents"]) for r in rows],
+                        "series_label": "Incidents", "unit": "count",
+                        "note": f"Source : transactions en erreur, client {client_id} (PostgreSQL)"})
+            out.append({"action": "highlight", "section": "dette", "level": "attention",
+                        "message": "Niveau d'endettement à surveiller"})
+        if _has(q, "plafond", "carte", "limit", "card"):
+            rows = data.card_spending_vs_limit(client_id)
+            out.append({"action": "chart", "chart_type": "bar", "title": "Dépenses 30 jours vs plafond, par carte",
+                        "labels": [f"{r['card_brand']} {r['card_type']} {r['card_number_masked']}" for r in rows],
+                        "values": [float(r["depenses_30j"]) for r in rows], "series_label": "Dépenses 30 j",
+                        "values2": [float(r["credit_limit"] or 0) for r in rows], "series_label2": "Plafond",
+                        "note": f"Source : cards et transactions, client {client_id} (PostgreSQL)"})
+            out.append({"action": "highlight", "section": "cartes", "level": "positif",
+                        "message": "Cartes et plafonds du client"})
+        if _has(q, "produit", "propos", "product", "offer"):
+            out.append({"action": "highlight", "section": "revenu", "level": "positif", "message": "Capacité financière"})
+            out.append({"action": "highlight", "section": "dette", "level": "attention", "message": "Endettement actuel"})
+    except Exception as exc:  # l'écran ne doit jamais faire échouer le chat
+        print(f"keyword_ui: {exc}", flush=True)
+        return []
+    return out
+
+
+def data_fold(text: str) -> str:
+    return text.lower().translate(str.maketrans("éèêëàâäîïôöùûüç", "eeeeaaaiioouuuc"))
+
+
 def _sse(name: str, payload) -> str:
     return f"event: {name}\ndata: {to_json(payload)}\n\n"
 
@@ -123,6 +170,8 @@ def _stream(client_id: int, message: str, thread_id: str | None):
     thread_id = thread_id or f"client-{client_id}-{uuid.uuid4().hex[:8]}"
     t0 = time.perf_counter()
     yield _sse("start", {"thread_id": thread_id})
+    for ui in keyword_ui(client_id, message):
+        yield _sse("ui", ui)
     answer = ""
     try:
         for mode, payload in graph().stream(

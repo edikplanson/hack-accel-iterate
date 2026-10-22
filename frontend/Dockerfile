@@ -1,7 +1,7 @@
 FROM nginx:1.27-alpine
 
-# PORT : port d'écoute du front. AGENT_URL : adresse de l'agent (nom du service en local,
-# URL publique de l'app agent sur Aiven Runtime si les deux apps ne partagent pas de réseau)
+# PORT: port the frontend listens on. AGENT_URL: agent address (service name locally,
+# public URL of the agent app on Aiven Runtime if the two apps do not share a network)
 ENV PORT=8080 \
     AGENT_URL=http://agent:8000 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
