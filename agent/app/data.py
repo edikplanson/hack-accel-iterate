@@ -14,6 +14,40 @@ def mcc_label(mcc) -> str:
     return MCC_LABELS.get(str(mcc), f"MCC {mcc}")
 
 
+# Le dataset ne contient pas de noms : on en dérive un, fictif et stable, de client_id et du genre.
+# Avec a = mod(id, 40) et k = id / 40 : prénom = mod(13a, 40), nom = mod(k + 7a, 50). Les deux sont des
+# bijections, donc chaque id de 0 à 1999 a un nom différent, et les voisins de liste ne se ressemblent pas.
+_FEMALE = ["Camille", "Léa", "Manon", "Chloé", "Emma", "Inès", "Sarah", "Julie", "Laura", "Marie",
+           "Clara", "Pauline", "Lucie", "Anaïs", "Mathilde", "Juliette", "Charlotte", "Élise", "Margaux", "Alice",
+           "Claire", "Sophie", "Nathalie", "Isabelle", "Céline", "Aurélie", "Hélène", "Valérie", "Sandrine", "Agnès",
+           "Louise", "Zoé", "Jeanne", "Lina", "Maëlle", "Romane", "Océane", "Noémie", "Elsa", "Victoire"]
+_MALE = ["Lucas", "Hugo", "Louis", "Gabriel", "Arthur", "Jules", "Thomas", "Nicolas", "Julien", "Antoine",
+         "Maxime", "Alexandre", "Pierre", "Paul", "Mathieu", "Romain", "Vincent", "Olivier", "Sébastien", "Laurent",
+         "Philippe", "François", "Éric", "David", "Benoît", "Guillaume", "Adrien", "Baptiste", "Clément", "Damien",
+         "Étienne", "Florian", "Hadrien", "Karim", "Léo", "Martin", "Noah", "Raphaël", "Samuel", "Yanis"]
+_LAST = ["Martin", "Bernard", "Dubois", "Thomas", "Robert", "Richard", "Petit", "Durand", "Leroy", "Moreau",
+         "Simon", "Laurent", "Lefebvre", "Michel", "Garcia", "David", "Bertrand", "Roux", "Vincent", "Fournier",
+         "Morel", "Girard", "Andre", "Mercier", "Dupont", "Lambert", "Bonnet", "Francois", "Martinez", "Legrand",
+         "Garnier", "Faure", "Rousseau", "Blanc", "Guerin", "Muller", "Henry", "Roussel", "Nicolas", "Perrin",
+         "Morin", "Mathieu", "Clement", "Gauthier", "Dumont", "Lopez", "Fontaine", "Chevalier", "Robin", "Masson"]
+
+
+def _sql_array(names: list[str]) -> str:
+    return "ARRAY[" + ",".join(f"'{n}'" for n in names) + "]"
+
+
+NAME_SQL = (
+    f"(CASE WHEN c.gender = 'Female' THEN ({_sql_array(_FEMALE)})[1 + mod(c.client_id * 13, 40)] "
+    f"ELSE ({_sql_array(_MALE)})[1 + mod(c.client_id * 13, 40)] END "
+    f"|| ' ' || ({_sql_array(_LAST)})[1 + mod(c.client_id / 40 + 7 * mod(c.client_id, 40), 50)])"
+)
+
+
+def _fold(expr: str) -> str:
+    """Minuscules sans accents, pour chercher "elise" et trouver "Élise"."""
+    return f"translate(lower({expr}), 'éèêëàâäîïôöùûüç', 'eeeeaaaiioouuuc')"
+
+
 @lru_cache(maxsize=1)
 def reference_date():
     """Date de la dernière transaction : sert de "aujourd'hui" pour les fenêtres glissantes."""
@@ -22,13 +56,14 @@ def reference_date():
 
 
 def list_clients(search: str | None = None, limit: int = 50) -> list[dict]:
-    sql = """
-        SELECT c.client_id, c.age, c.gender, c.yearly_income, c.total_debt, c.credit_score,
+    sql = f"""
+        SELECT c.client_id, {NAME_SQL} AS nom, c.age, c.gender, c.yearly_income, c.total_debt, c.credit_score,
                count(k.card_id) AS nb_cards,
                bool_or(k.card_on_dark_web) AS card_compromised
         FROM clients c
         LEFT JOIN cards k ON k.client_id = c.client_id
-        WHERE (%(s)s::text IS NULL OR c.client_id::text LIKE %(s)s || '%%' OR c.address ILIKE '%%' || %(s)s || '%%')
+        WHERE (%(s)s::text IS NULL OR c.client_id::text LIKE %(s)s || '%%' OR c.address ILIKE '%%' || %(s)s || '%%'
+               OR {_fold(NAME_SQL)} LIKE '%%' || {_fold("%(s)s")} || '%%')
         GROUP BY c.client_id
         ORDER BY c.client_id
         LIMIT %(limit)s
@@ -37,7 +72,7 @@ def list_clients(search: str | None = None, limit: int = 50) -> list[dict]:
 
 
 def client_profile(client_id: int) -> dict | None:
-    rows = query("SELECT * FROM clients WHERE client_id = %s", (client_id,))
+    rows = query(f"SELECT c.*, {NAME_SQL} AS nom FROM clients c WHERE c.client_id = %s", (client_id,))
     if not rows:
         return None
     p = rows[0]

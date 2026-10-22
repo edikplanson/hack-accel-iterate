@@ -81,8 +81,9 @@ async function loadClients(q = "") {
       <li class="client-item px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${c.client_id === state.clientId ? "active" : ""}"
           data-id="${c.client_id}">
         <div class="flex items-center gap-2">
-          <span class="font-medium">Client n°${c.client_id}</span>
+          <span class="font-medium client-name">${esc(c.nom || `Client n°${c.client_id}`)}</span>
           ${c.card_compromised ? '<span class="w-2 h-2 rounded-full bg-red-500" title="Carte compromise"></span>' : ""}
+          <span class="ml-auto text-xs text-slate-400">n°${c.client_id}</span>
         </div>
         <div class="text-xs text-slate-500">${esc(c.age)} ans · score ${esc(c.credit_score)} · ${esc(c.nb_cards)} carte(s)</div>
       </li>`).join("") || '<li class="p-4 text-slate-400">Aucun client</li>';
@@ -106,7 +107,7 @@ async function selectClient(id) {
   state.clientId = id;
   state.threadId = null;
   document.querySelectorAll(".client-item").forEach((li) => li.classList.toggle("active", Number(li.dataset.id) === id));
-  $("chat-client").textContent = `client n°${id}`;
+  $("chat-client").textContent = document.querySelector(`.client-item[data-id="${id}"] .client-name`)?.textContent || `client n°${id}`;
   ["chat-input", "send-btn", "brief-btn"].forEach((k) => ($(k).disabled = false));
   $("messages").innerHTML = "";
   renderSuggestions();
@@ -156,8 +157,8 @@ function renderDashboard(d, monthly) {
   $("dashboard").innerHTML = `
     <div class="flex items-end gap-3">
       <div>
-        <h1 class="text-2xl font-semibold">Client n°${p.client_id}</h1>
-        <div class="text-sm text-slate-500">${esc(p.age)} ans · ${esc(p.gender)} · ${esc(p.address)}</div>
+        <h1 class="text-2xl font-semibold">${esc(p.nom || `Client n°${p.client_id}`)}</h1>
+        <div class="text-sm text-slate-500">Client n°${p.client_id} · ${esc(p.age)} ans · ${esc(p.gender)} · ${esc(p.address)}</div>
       </div>
       <div class="ml-auto text-xs text-slate-400">Données au ${dateFr(k.date_reference)}</div>
     </div>
