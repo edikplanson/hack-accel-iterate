@@ -1,0 +1,16 @@
+body { font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+.kpi-label { font-size: 12px; color: #64748b; }
+.kpi-value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+.prose-chat p { margin: 0 0 8px; }
+.prose-chat ul { list-style: disc; padding-left: 18px; margin: 0 0 8px; }
+.prose-chat ol { list-style: decimal; padding-left: 18px; margin: 0 0 8px; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 600; margin: 8px 0 4px; }
+.prose-chat strong { font-weight: 600; }
+.prose-chat code { background: #f1f5f9; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+.source-tag { background: #ecfdf5; color: #047857; border-radius: 4px; padding: 0 4px; font-size: 11px; white-space: nowrap; }
+.client-item.active { background: #ecfdf5; border-left: 3px solid #047857; }
+.dots span { animation: blink 1.2s infinite both; }
+.dots span:nth-child(2) { animation-delay: .2s; }
+.dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }

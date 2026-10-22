@@ -103,13 +103,25 @@ CREATE TABLE transactions (
   errors         text
 );
 
+-- Le dataset s'arrête en octobre 2019 : on décale toutes les dates d'un nombre entier de semaines
+-- (jours de semaine conservés) pour que la dernière transaction tombe la veille du chargement.
+CREATE TEMP TABLE tx_shift AS
+SELECT max(date::timestamp) AS max_date,
+       (((current_date - 1) - max(date::timestamp)::date) / 7 * 7) AS shift_days
+FROM stg_tx;
+
 INSERT INTO transactions
-SELECT id::bigint, date::timestamp, client_id::int, card_id::int,
+SELECT id::bigint, date::timestamp + (s.shift_days || ' days')::interval, client_id::int, card_id::int,
        replace(amount, '$', '')::numeric,
        use_chip, merchant_id::int, merchant_city, merchant_state,
        nullif(regexp_replace(zip, '\.0$', ''), ''), mcc::int, nullif(errors, '')
-FROM stg_tx
-WHERE date::timestamp >= (SELECT max(date::timestamp) FROM stg_tx) - (:'tx_months' || ' months')::interval;
+FROM stg_tx, tx_shift s
+WHERE date::timestamp >= s.max_date - (:'tx_months' || ' months')::interval;
+
+-- Trace du décalage appliqué (pour la transparence de la démo)
+CREATE TABLE IF NOT EXISTS app_meta (key text PRIMARY KEY, value text);
+INSERT INTO app_meta SELECT 'tx_date_shift_days', shift_days::text FROM tx_shift
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 CREATE INDEX idx_tx_client_date ON transactions (client_id, tx_date DESC);
 CREATE INDEX idx_tx_card ON transactions (card_id);
