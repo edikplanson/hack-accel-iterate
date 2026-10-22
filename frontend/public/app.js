@@ -8,6 +8,7 @@ const TOOL_LABELS = {
   get_recent_transactions: "Transactions",
   get_client_alerts: "Alertes",
   search_bank_rules: "Règles internes",
+  get_bank_rule: "Article de règle",
   run_readonly_sql: "Requête SQL",
   ui_show_chart: "Graphique",
   ui_highlight: "Mise en avant",
