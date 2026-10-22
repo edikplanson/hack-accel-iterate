@@ -27,7 +27,7 @@ Puis ouvrir http://localhost:8080. L'API de l'agent est aussi visible sur http:/
 
 1. Pousser le repo sur GitHub.
 2. Console Aiven > Runtime > Deploy application, choisir le repo et `docker-compose.yml`, puis Scan et Deploy.
-3. Sur l'app `agent` : Connected services > Connect service > le PostgreSQL existant, variable `DATABASE_URL`. Ajouter `ANTHROPIC_API_KEY` et `OPENAI_API_KEY` en secrets.
+3. Sur l'app `agent` : Connected services > Connect service > le PostgreSQL existant, variable `DATABASE_URL`. Ajouter `ANTHROPIC_API_KEY` en secret.
 4. Si le front affiche "Agent injoignable", mettre dans l'app `frontend` la variable `AGENT_URL` avec l'URL publique de l'app `agent`, puis redéployer.
 5. Un push ne redéploie pas automatiquement : Overview > Actions > Deploy latest commit.
 
