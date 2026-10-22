@@ -206,8 +206,8 @@ function renderDashboard(d, monthly) {
         <div class="text-xs text-slate-500 mt-1">${p.debt_to_income_ratio == null ? "n/a" : p.debt_to_income_ratio.toLocaleString(LOCALE)}× annual income</div></div>
       <div class="card kpi" id="kpi-score" data-section="score"><div class="kpi-label">Credit score</div>${kpiValue(p.credit_score, "int")}</div>
       <div class="card kpi" id="kpi-depenses" data-section="depenses"><div class="kpi-label">30-day spending</div>${kpiValue(k.depenses_30j, "eur")}
-        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div>
-        ${sparkline(fullMonths(monthly, k.date_reference).slice(-3))}</div>
+        ${sparkline(fullMonths(monthly, k.date_reference).slice(-3))}
+        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div></div>
     </div>
 
     ${stageHtml()}
