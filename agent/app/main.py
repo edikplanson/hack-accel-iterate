@@ -125,8 +125,10 @@ def keyword_ui(client_id: int, message: str) -> list[dict]:
     out: list[dict] = []
     try:
         if _has(q, "depense", "evolution", "3 mois", "trois mois", "spend", "trend", "3 month", "three month"):
-            rows = data.monthly_spending(client_id, 3)
-            out.append({"action": "chart", "chart_type": "line", "title": "Monthly spending (3 months)",
+            # Last 3 full calendar months: the rolling window starts and ends on partial months
+            current = data.reference_date().strftime("%Y-%m")
+            rows = [r for r in data.monthly_spending(client_id, 4) if r["mois"] != current][-3:]
+            out.append({"action": "chart", "chart_type": "line", "title": "Monthly spending (last 3 full months)",
                         "labels": [r["mois"] for r in rows], "values": [float(r["depenses"]) for r in rows],
                         "series_label": "Spending", "note": f"Source: transactions client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "depenses", "level": "positif",
@@ -154,7 +156,8 @@ def keyword_ui(client_id: int, message: str) -> list[dict]:
     except Exception as exc:  # the screen must never make the chat fail
         print(f"keyword_ui: {exc}", flush=True)
         return []
-    return out
+    # origin "db": values computed in PostgreSQL, the frontend only feeds these to the insight stage
+    return [{**ui, "origin": "db"} for ui in out]
 
 
 def data_fold(text: str) -> str:
