@@ -3,7 +3,8 @@ import os
 
 from opensearchpy import OpenSearch
 
-OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL", "")
+# En local : OPENSEARCH_URL (.env). Sur Aiven Runtime : OPENSEARCH_URI (injectée par le service connecté).
+OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL") or os.environ.get("OPENSEARCH_URI", "")
 OPENSEARCH_INDEX = os.environ.get("OPENSEARCH_INDEX", "rules-current")
 _FIELDS = ["article_id", "doc_code", "doc_title", "file", "version", "section", "title", "text", "refs"]
 _client: OpenSearch | None = None
@@ -13,7 +14,7 @@ def client() -> OpenSearch:
     global _client
     if _client is None:
         if not OPENSEARCH_URL:
-            raise RuntimeError("OPENSEARCH_URL missing")
+            raise RuntimeError("OPENSEARCH_URL / OPENSEARCH_URI missing")
         # L'URL Aiven embarque les identifiants (https://user:pass@host:port)
         _client = OpenSearch(OPENSEARCH_URL, verify_certs=True, timeout=10)
     return _client

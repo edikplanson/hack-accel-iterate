@@ -1,5 +1,5 @@
 const API = "/api";
-const state = { clientId: null, threadId: null, chart: null, agentCharts: [], busy: false, abort: null };
+const state = { clientId: null, threadId: null, chart: null, agentCharts: [], busy: false, abort: null, dash: null, monthly: [] };
 
 const TOOL_LABELS = {
   get_client_profile: "PostgreSQL · Profile",
@@ -120,6 +120,7 @@ const LEVEL_LABEL = { critique: "Critical", attention: "Warning", info: "Info", 
 async function selectClient(id) {
   if (state.abort) state.abort.abort(); // the pending answer was about the previous client
   resetAgentCanvas();
+  resetStage();
   state.clientId = id;
   state.threadId = null;
   document.querySelectorAll(".client-item").forEach((li) => li.classList.toggle("active", Number(li.dataset.id) === id));
@@ -140,6 +141,8 @@ async function selectClient(id) {
 
 function renderDashboard(d, monthly) {
   const p = d.profil, k = d.kpis;
+  state.dash = d;
+  state.monthly = monthly;
   const alerts = d.alertes.length
     ? d.alertes.map((a) => `
         <div class="alert-row border rounded-xl px-4 py-2.5 text-sm flex items-center gap-2 ${LEVEL_STYLE[a.niveau] || LEVEL_STYLE.info}">
@@ -194,8 +197,6 @@ function renderDashboard(d, monthly) {
       </div>
     </div>
 
-    <div id="agent-canvas" class="agent-viz space-y-4"></div>
-
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
       <div class="card" id="kpi-revenu" data-section="revenu"><div class="kpi-label">Annual income</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
       <div class="card" id="kpi-dette" data-section="dette"><div class="kpi-label">Total debt</div><div class="kpi-value">${eur(p.total_debt)}</div>
@@ -204,6 +205,10 @@ function renderDashboard(d, monthly) {
       <div class="card" id="kpi-depenses" data-section="depenses"><div class="kpi-label">30-day spending</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
         <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div></div>
     </div>
+
+    ${stageHtml()}
+
+    <div id="agent-canvas" class="space-y-4"></div>
 
     <div class="space-y-2" data-section="alertes">${alerts}</div>
 
@@ -242,6 +247,7 @@ const level = (l) => (LEVELS.includes(l) ? l : "info");
 function resetAgentCanvas() {
   state.agentCharts.forEach((c) => c.destroy());
   state.agentCharts = [];
+  if ($("agent-canvas")) $("agent-canvas").innerHTML = "";
 }
 
 function clearHighlights() {
@@ -343,9 +349,170 @@ function highlight(ui) {
 }
 
 function applyUi(ui) {
-  if (!ui || !$("agent-canvas")) return; // 360 view not loaded yet
+  if (!ui || !$("insight-stage")) return; // 360 view not loaded yet
+  startUiTurn();
+  // Only charts computed in PostgreSQL (origin "db") feed the stage; charts typed by the model keep their own panel
+  if (ui.action === "chart" && ui.origin === "db") {
+    stage.touched.add("chart");
+    stageChart(ui);
+    return;
+  }
   const fn = { chart: showChart, table: showTable, metric: showMetric, highlight }[ui.action];
   if (fn) fn(ui);
+}
+
+/* ---------- Agent insight stage (sticky, under the KPI row) ---------- */
+// One Chart.js instance morphed from answer to answer; previews of off-screen sections come to it instead of scrolling
+const stage = { chart: null, type: null, fmt: eur, queue: Promise.resolve(), touched: null, question: "" };
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const wait = (ms) => new Promise((r) => setTimeout(r, reducedMotion() ? 0 : ms));
+const GOLD = "#c9a45c";
+const pct = (x) => `${Math.round(x * 100)}%`;
+const signedPct = (x) => `${x >= 0 ? "+" : "-"}${Math.abs(Math.round(x * 100))}%`;
+const fmtMonth = (s) => (/^\d{4}-\d{2}$/.test(s) ? new Date(`${s}-01T00:00:00`).toLocaleDateString(LOCALE, { month: "short", year: "2-digit" }) : String(s));
+const shortLabel = (s) => fmtMonth(String(s)).replace(/\*{4}\s*/, "••");
+
+function stageHtml() {
+  const ghost = [38, 62, 48, 80, 56, 70, 44].map((h) => `<span style="height:${h}%"></span>`).join("");
+  return `
+    <section id="insight-stage" class="insight-stage" data-state="empty">
+      <div class="stage-head"><span class="stage-badge">Agent insight</span><span class="stage-title"></span></div>
+      <div class="stage-empty"><div class="stage-ghost">${ghost}</div><span>Ask a question to see the data move</span></div>
+      <div class="stage-body">
+        <div class="stage-chart is-fading" hidden>
+          <div class="slot-title"></div>
+          <div class="stage-canvas"><canvas></canvas></div>
+          <div class="stage-caption"></div>
+        </div>
+        <div class="stage-preview is-fading" hidden></div>
+      </div>
+    </section>`;
+}
+
+function resetStage() {
+  stage.chart?.destroy();
+  stage.chart = stage.type = null;
+  stage.touched = null;
+}
+
+// First display order of an answer: only now does the previous answer's state go away (no ui, nothing moves)
+function startUiTurn() {
+  if (stage.touched) return;
+  const touched = (stage.touched = new Set());
+  clearHighlights();
+  resetAgentCanvas();
+  const el = $("insight-stage");
+  el.dataset.state = "live";
+  el.querySelector(".stage-title").textContent = stage.question;
+  // Display orders of one answer arrive together: slots that got nothing this time are put away
+  setTimeout(() => {
+    if (stage.touched !== touched || !touched.size) return;
+    if (!touched.has("chart")) hideSlot(".stage-chart");
+    if (!touched.has("preview")) hideSlot(".stage-preview");
+  }, 400);
+}
+
+function enqueue(fn) {
+  stage.queue = stage.queue.then(fn).catch((e) => console.error("stage", e));
+}
+
+function hideSlot(sel) {
+  enqueue(async () => {
+    const slot = document.querySelector(`#insight-stage ${sel}`);
+    if (!slot || slot.hidden) return;
+    slot.classList.add("is-fading");
+    await wait(300);
+    slot.hidden = true;
+  });
+}
+
+function stageChartConfig(type) {
+  const tick = "#cfe0d7", grid = "rgba(230, 213, 174, .12)";
+  return {
+    type,
+    data: { labels: [], datasets: [] },
+    options: {
+      maintainAspectRatio: false,
+      animation: reducedMotion() ? false : { duration: 900, easing: "easeOutQuart" },
+      plugins: {
+        legend: { display: false, position: "top", align: "end", labels: { color: tick, boxWidth: 10, boxHeight: 10 } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label ? `${c.dataset.label}: ` : ""}${stage.fmt(c.parsed.y)}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: grid }, ticks: { color: tick, maxRotation: 0, autoSkip: true } },
+        y: { beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: tick, maxTicksLimit: 5, callback: (v) => stage.fmt(v) } },
+      },
+    },
+  };
+}
+
+function datasetStyle(type, i) {
+  if (type === "line") {
+    return { borderColor: GOLD, backgroundColor: "rgba(201, 164, 92, .16)", fill: true, tension: 0.35, borderWidth: 2.5,
+      pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: GOLD, pointBorderColor: "#062e22", pointBorderWidth: 2 };
+  }
+  return i === 0
+    ? { backgroundColor: GOLD, hoverBackgroundColor: "#e6d5ae", borderWidth: 0, borderRadius: 6, maxBarThickness: 44 }
+    : { backgroundColor: "rgba(230, 213, 174, .18)", borderColor: "rgba(230, 213, 174, .55)", borderWidth: 1, borderRadius: 6, maxBarThickness: 44 };
+}
+
+// Key number of the chart, computed from the values the chart shows
+function chartCaption(ui) {
+  const v = (ui.values || []).map(Number), L = (ui.labels || []).map(shortLabel), fmt = stage.fmt;
+  if (!v.length) return "";
+  if (Array.isArray(ui.values2)) {
+    let best = -1, bi = 0;
+    v.forEach((x, i) => { const lim = Number(ui.values2[i]); if (lim > 0 && x / lim > best) { best = x / lim; bi = i; } });
+    return best < 0 ? "" : `Highest usage: <b>${esc(L[bi])}</b> at <b>${pct(best)}</b> of its limit (${fmt(v[bi])} of ${fmt(ui.values2[bi])})`;
+  }
+  const label = ui.series_label || "Value";
+  if (ui.chart_type === "line" && v.length > 1 && v[0]) {
+    const change = (v[v.length - 1] - v[0]) / v[0];
+    return `${esc(label)} <b>${signedPct(change)}</b> over ${v.length} months (${fmt(v[0])} in ${esc(L[0])}, ${fmt(v[v.length - 1])} in ${esc(L[L.length - 1])})`;
+  }
+  const peak = v.indexOf(Math.max(...v));
+  if (ui.unit === "count") {
+    const total = v.reduce((a, b) => a + b, 0);
+    return `<b>${total}</b> ${esc(label.toLowerCase())} over ${v.length} months, peak <b>${v[peak]}</b> in ${esc(L[peak])}`;
+  }
+  return `Peak: <b>${fmt(v[peak])}</b> in ${esc(L[peak])}`;
+}
+
+function stageChart(ui) {
+  enqueue(async () => {
+    const slot = document.querySelector("#insight-stage .stage-chart");
+    if (!slot) return;
+    const type = ui.chart_type === "line" ? "line" : "bar";
+    const entering = slot.hidden;
+    const newType = !stage.chart || stage.type !== type;
+    // Same type: bars and points morph in place. Other type: crossfade, then a new chart on the same canvas
+    if (newType && !entering) {
+      slot.classList.add("is-fading");
+      await wait(300);
+    }
+    slot.hidden = false;
+    stage.fmt = ui.unit === "count" ? (x) => Number(x).toLocaleString(LOCALE) : eur;
+    slot.querySelector(".slot-title").textContent = ui.title || "";
+    slot.querySelector(".stage-caption").innerHTML = chartCaption(ui);
+    if (newType) {
+      stage.chart?.destroy();
+      stage.chart = new Chart(slot.querySelector("canvas"), stageChartConfig(type));
+      stage.type = type;
+    } else {
+      stage.chart.resize(); // the slot width may have changed while a preview came or went
+    }
+    const series = [{ label: ui.series_label || ui.title || "", data: (ui.values || []).map(Number) }];
+    if (Array.isArray(ui.values2)) series.push({ label: ui.series_label2 || "", data: ui.values2.map(Number) });
+    const ds = stage.chart.data.datasets;
+    // Dataset objects are kept and mutated so Chart.js animates the existing bars and points to their new values
+    series.forEach((serie, i) => Object.assign(ds[i] || (ds[i] = {}), serie, datasetStyle(type, i)));
+    ds.length = series.length;
+    stage.chart.data.labels = (ui.labels || []).map(shortLabel);
+    stage.chart.options.plugins.legend.display = series.length > 1;
+    stage.chart.options.animation = reducedMotion() ? false : { duration: 900, easing: "easeOutQuart" };
+    stage.chart.update();
+    requestAnimationFrame(() => slot.classList.remove("is-fading"));
+  });
 }
 
 /* ---------- Chat ---------- */
@@ -469,9 +636,9 @@ async function send(message, brief = false) {
     return;
   }
   showError("");
-  clearHighlights();
-  resetAgentCanvas();
-  if ($("agent-canvas")) $("agent-canvas").innerHTML = "";
+  // The screen is left as is until this answer sends its first display order
+  stage.touched = null;
+  stage.question = brief ? "Meeting brief" : text;
   state.busy = true;
   state.abort = new AbortController();
   $("send-btn").disabled = $("brief-btn").disabled = true;
