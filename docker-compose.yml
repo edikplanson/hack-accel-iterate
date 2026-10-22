@@ -2,6 +2,8 @@
 # Front (nginx) -> Agent (FastAPI + LangGraph) -> Aiven PostgreSQL (service existant, hors compose)
 #
 # Local :        docker compose up --build   puis http://localhost:8080
+# Dev (watch) :  docker compose up --build --watch   (ou : docker compose watch)
+#                les modifs de agent/app et frontend/public sont synchronisées à chaud
 # Aiven Runtime : ce fichier est détecté au déploiement ; la base n'est volontairement pas déclarée ici
 #                 (sinon Runtime créerait un nouveau PostgreSQL). On connecte le service existant à l'app
 #                 "agent" avec la variable DATABASE_URL.
@@ -20,6 +22,19 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    develop:
+      watch:
+        # Code Python : copié dans le conteneur puis uvicorn redémarré
+        - action: sync+restart
+          path: ./agent/app
+          target: /srv/app
+          ignore:
+            - __pycache__/
+        # Dépendances ou image : reconstruction complète
+        - action: rebuild
+          path: ./agent/requirements.txt
+        - action: rebuild
+          path: ./agent/Dockerfile
 
   frontend:
     build:
@@ -31,3 +46,15 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    develop:
+      watch:
+        # Fichiers statiques : servis directement par nginx, pas de redémarrage
+        - action: sync
+          path: ./frontend/public
+          target: /usr/share/nginx/html
+        # Template nginx : envsubst ne tourne qu'au démarrage, d'où le restart
+        - action: sync+restart
+          path: ./frontend/nginx.conf.template
+          target: /etc/nginx/templates/default.conf.template
+        - action: rebuild
+          path: ./frontend/Dockerfile

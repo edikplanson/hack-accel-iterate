@@ -40,6 +40,7 @@ Puis ouvrir http://localhost:8080. L'API de l'agent est aussi visible sur http:/
 | GET | `/api/clients/{id}` | Vue 360 : profil, cartes, KPIs, alertes, dernières opérations |
 | GET | `/api/clients/{id}/monthly` | Dépenses mensuelles |
 | POST | `/api/chat` | `{client_id, message, thread_id?}` : réponse de l'agent, outils utilisés, latence |
+| POST | `/api/chat/stream` | `{client_id, message, thread_id?, brief?}` : flux SSE (`start`, `step`, `step_done`, `ui`, `token`, `answer`, `error`) ; l'agent pilote l'écran en direct |
 | POST | `/api/clients/{id}/brief` | Fiche de préparation de rendez-vous |
 
 ## Données

@@ -1,5 +1,6 @@
 """Outils exposés à l'agent LangGraph. Chaque outil renvoie du JSON avec ses sources."""
 import re
+from typing import Literal
 
 from langchain_core.tools import tool
 
@@ -87,6 +88,69 @@ def run_readonly_sql(sql: str) -> str:
     return to_json({"source": "requête SQL", "sql": clean, "lignes": rows})
 
 
+# ---------- Outils écran : ils ne lisent pas la base, ils décrivent un changement d'affichage ----------
+
+Level = Literal["critique", "attention", "info", "positif"]
+Section = Literal["revenu", "dette", "score", "depenses", "alertes", "cartes", "categories", "mensuel", "transactions"]
+
+
+def _ui(payload: dict) -> str:
+    return to_json({"ok": True, "ui": payload})
+
+
+@tool
+def ui_show_chart(
+    title: str,
+    labels: list[str],
+    values: list[float],
+    chart_type: Literal["bar", "line", "pie"] = "bar",
+    series_label: str = "",
+    note: str = "",
+) -> str:
+    """Affiche un graphique sur l'écran du conseiller.
+    À utiliser dès qu'un résultat chiffré se compare (catégories, cartes, clients) ou évolue dans le temps (mois).
+    labels et values doivent avoir la même longueur (24 points maximum) et venir d'un outil de données.
+    chart_type : "bar" pour comparer, "line" pour une évolution, "pie" pour une répartition.
+    note : une phrase courte qui dit ce qu'il faut retenir du graphique."""
+    n = min(len(labels), len(values), 24)
+    return _ui({
+        "action": "chart",
+        "title": title,
+        "chart_type": chart_type,
+        "labels": [str(x) for x in labels[:n]],
+        "values": [float(v) for v in values[:n]],
+        "series_label": series_label,
+        "note": note,
+    })
+
+
+@tool
+def ui_highlight(section: Section, message: str, level: Level = "attention") -> str:
+    """Encadre une zone déjà affichée sur le tableau de bord et y ajoute une note.
+    À utiliser dès que ton raisonnement s'appuie sur une de ces zones :
+    revenu, dette, score (score de crédit), depenses (dépenses 30 jours), alertes, cartes,
+    categories (top dépenses 30 jours), mensuel (graphique des dépenses mensuelles), transactions (dernières opérations).
+    message : une phrase courte expliquant pourquoi la zone compte. level : critique, attention, info ou positif."""
+    return _ui({"action": "highlight", "section": section, "message": message, "level": level})
+
+
+@tool
+def ui_show_table(title: str, columns: list[str], rows: list[list[str | int | float | None]], note: str = "") -> str:
+    """Affiche un tableau sur l'écran du conseiller.
+    À utiliser pour une liste de lignes : transactions suspectes, incidents de paiement, résultat d'une requête SQL.
+    Chaque ligne a autant de cellules que columns. 20 lignes maximum, valeurs issues des outils de données."""
+    clean = [["" if c is None else str(c) for c in r] for r in rows[:20]]
+    return _ui({"action": "table", "title": title, "columns": [str(c) for c in columns], "rows": clean, "note": note})
+
+
+@tool
+def ui_show_metric(label: str, value: str, detail: str = "", level: Level = "info") -> str:
+    """Affiche un chiffre clé en grand sur l'écran du conseiller.
+    À utiliser pour un indicateur que tu as calculé ou extrait (taux d'endettement, hausse des dépenses, nombre d'incidents).
+    value est déjà formatée (ex. "2 340 €", "+18 %"). detail : contexte en une phrase. level : critique, attention, info ou positif."""
+    return _ui({"action": "metric", "label": label, "value": value, "detail": detail, "level": level})
+
+
 TOOLS = [
     get_client_profile,
     get_cards,
@@ -95,4 +159,8 @@ TOOLS = [
     get_client_alerts,
     search_bank_rules,
     run_readonly_sql,
+    ui_show_chart,
+    ui_highlight,
+    ui_show_table,
+    ui_show_metric,
 ]
