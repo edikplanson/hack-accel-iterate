@@ -1,4 +1,4 @@
-"""API de l'agent : tableau de bord client + chat LangGraph (réponse complète ou flux SSE)."""
+"""Agent API: client dashboard + LangGraph chat (full answer or SSE stream)."""
 import json
 import time
 import uuid
@@ -21,11 +21,11 @@ async def lifespan(_app: FastAPI):
         db._pool.close()
 
 
-app = FastAPI(title="Copilote conseiller", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Advisor copilot", version="0.1.0", lifespan=lifespan)
 
 BRIEF_PROMPT = (
-    "Prépare ma fiche de rendez-vous pour ce client : situation en 3 lignes, points de vigilance, "
-    "opportunités commerciales, et 3 questions à lui poser. Vérifie les règles internes applicables."
+    "Prepare my meeting brief for this client: situation in 3 lines, points of attention, "
+    "sales opportunities, and 3 questions to ask them. Check the applicable internal rules."
 )
 
 
@@ -36,7 +36,7 @@ class ChatIn(BaseModel):
     client_id: int
     message: str = ""
     thread_id: str | None = None
-    brief: bool = False  # True : fiche de rendez-vous, message ignoré
+    brief: bool = False  # True: meeting brief, message ignored
 
 
 @app.get("/health")
@@ -57,7 +57,7 @@ def clients(q: str | None = None, limit: int = 50):
 def client_dashboard(client_id: int):
     d = data.dashboard(client_id)
     if d is None:
-        raise HTTPException(404, f"client {client_id} introuvable")
+        raise HTTPException(404, f"client {client_id} not found")
     return jsonable(d)
 
 
@@ -67,7 +67,7 @@ def client_monthly(client_id: int, months: int = 12):
 
 
 def _text(content) -> str:
-    """Texte d'un message : chaîne simple ou liste de blocs Anthropic (on ne garde que les blocs texte)."""
+    """Text of a message: plain string or list of Anthropic blocks (only text blocks are kept)."""
     if isinstance(content, str):
         return content
     return "".join(
@@ -82,7 +82,7 @@ def _run(client_id: int, message: str, thread_id: str | None):
         {"messages": [HumanMessage(message)], "client_id": client_id},
         config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
     )
-    # Étapes de ce tour uniquement (après le dernier message humain)
+    # Steps of this turn only (after the last human message)
     msgs = result["messages"]
     last_human = max(i for i, m in enumerate(msgs) if isinstance(m, HumanMessage))
     steps, by_id = [], {}
@@ -106,7 +106,7 @@ def _run(client_id: int, message: str, thread_id: str | None):
 @app.post("/api/chat")
 def chat(body: ChatIn):
     if not body.message.strip():
-        raise HTTPException(400, "message vide")
+        raise HTTPException(400, "empty message")
     return _run(body.client_id, body.message, body.thread_id)
 
 
@@ -120,38 +120,38 @@ def _has(text: str, *words: str) -> bool:
 
 
 def keyword_ui(client_id: int, message: str) -> list[dict]:
-    """Ordres d'affichage déclenchés par mots-clés de la question. Les valeurs viennent de PostgreSQL, jamais du LLM."""
+    """Display orders triggered by keywords in the question. Values come from PostgreSQL, never from the LLM."""
     q = data_fold(message)
     out: list[dict] = []
     try:
         if _has(q, "depense", "evolution", "3 mois", "trois mois", "spend", "trend", "3 month", "three month"):
             rows = data.monthly_spending(client_id, 3)
-            out.append({"action": "chart", "chart_type": "line", "title": "Dépenses mensuelles (3 mois)",
+            out.append({"action": "chart", "chart_type": "line", "title": "Monthly spending (3 months)",
                         "labels": [r["mois"] for r in rows], "values": [float(r["depenses"]) for r in rows],
-                        "series_label": "Dépenses", "note": f"Source : transactions client {client_id} (PostgreSQL)"})
+                        "series_label": "Spending", "note": f"Source: transactions client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "depenses", "level": "positif",
-                        "message": "Dépenses récentes du client"})
+                        "message": "Client's recent spending"})
         if _has(q, "risque", "incident", "risk"):
             rows = data.incidents_by_month(client_id, 6)
-            out.append({"action": "chart", "chart_type": "bar", "title": "Incidents de paiement par mois (6 mois)",
+            out.append({"action": "chart", "chart_type": "bar", "title": "Payment incidents per month (6 months)",
                         "labels": [r["mois"] for r in rows], "values": [int(r["incidents"]) for r in rows],
                         "series_label": "Incidents", "unit": "count",
-                        "note": f"Source : transactions en erreur, client {client_id} (PostgreSQL)"})
+                        "note": f"Source: failed transactions, client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "dette", "level": "attention",
-                        "message": "Niveau d'endettement à surveiller"})
+                        "message": "Debt level to watch"})
         if _has(q, "plafond", "carte", "limit", "card"):
             rows = data.card_spending_vs_limit(client_id)
-            out.append({"action": "chart", "chart_type": "bar", "title": "Dépenses 30 jours vs plafond, par carte",
+            out.append({"action": "chart", "chart_type": "bar", "title": "30-day spending vs limit, per card",
                         "labels": [f"{r['card_brand']} {r['card_type']} {r['card_number_masked']}" for r in rows],
-                        "values": [float(r["depenses_30j"]) for r in rows], "series_label": "Dépenses 30 j",
-                        "values2": [float(r["credit_limit"] or 0) for r in rows], "series_label2": "Plafond",
-                        "note": f"Source : cards et transactions, client {client_id} (PostgreSQL)"})
+                        "values": [float(r["depenses_30j"]) for r in rows], "series_label": "30-day spending",
+                        "values2": [float(r["credit_limit"] or 0) for r in rows], "series_label2": "Limit",
+                        "note": f"Source: cards and transactions, client {client_id} (PostgreSQL)"})
             out.append({"action": "highlight", "section": "cartes", "level": "positif",
-                        "message": "Cartes et plafonds du client"})
+                        "message": "Client's cards and limits"})
         if _has(q, "produit", "propos", "product", "offer"):
-            out.append({"action": "highlight", "section": "revenu", "level": "positif", "message": "Capacité financière"})
-            out.append({"action": "highlight", "section": "dette", "level": "attention", "message": "Endettement actuel"})
-    except Exception as exc:  # l'écran ne doit jamais faire échouer le chat
+            out.append({"action": "highlight", "section": "revenu", "level": "positif", "message": "Financial capacity"})
+            out.append({"action": "highlight", "section": "dette", "level": "attention", "message": "Current debt"})
+    except Exception as exc:  # the screen must never make the chat fail
         print(f"keyword_ui: {exc}", flush=True)
         return []
     return out
@@ -166,7 +166,7 @@ def _sse(name: str, payload) -> str:
 
 
 def _stream(client_id: int, message: str, thread_id: str | None):
-    """Générateur SSE : étapes d'outils, ordres d'affichage (ui) et tokens au fil de l'eau, puis la réponse finale."""
+    """SSE generator: tool steps, display orders (ui) and tokens as they come, then the final answer."""
     thread_id = thread_id or f"client-{client_id}-{uuid.uuid4().hex[:8]}"
     t0 = time.perf_counter()
     yield _sse("start", {"thread_id": thread_id})
@@ -215,7 +215,7 @@ def _stream(client_id: int, message: str, thread_id: str | None):
 def chat_stream(body: ChatIn):
     message = BRIEF_PROMPT if body.brief else body.message.strip()
     if not message:
-        raise HTTPException(400, "message vide")
+        raise HTTPException(400, "empty message")
     return StreamingResponse(
         _stream(body.client_id, message, body.thread_id),
         media_type="text/event-stream",

@@ -1,4 +1,4 @@
-"""Outils exposés à l'agent LangGraph. Chaque outil renvoie du JSON avec ses sources."""
+"""Tools exposed to the LangGraph agent. Each tool returns JSON with its sources."""
 import re
 from typing import Literal
 
@@ -10,61 +10,61 @@ from .db import query, query_readonly, to_json
 
 @tool
 def get_client_profile(client_id: int) -> str:
-    """Profil du client : âge, revenus annuels, dette totale, ratio dette/revenu, score de crédit, nombre de cartes."""
+    """Client profile: age, yearly income, total debt, debt-to-income ratio, credit score, number of cards."""
     p = data.client_profile(client_id)
     if not p:
-        return to_json({"error": f"client {client_id} introuvable"})
-    return to_json({"source": f"clients#{client_id}", "profil": p})
+        return to_json({"error": f"client {client_id} not found"})
+    return to_json({"source": f"clients#{client_id}", "profile": p})
 
 
 @tool
 def get_cards(client_id: int) -> str:
-    """Cartes bancaires du client : marque, type, plafond, expiration, puce, signalement compromission."""
-    return to_json({"source": f"cards (client {client_id})", "cartes": data.client_cards(client_id)})
+    """Client's bank cards: brand, type, credit limit, expiry, chip, compromised flag."""
+    return to_json({"source": f"cards (client {client_id})", "cards": data.client_cards(client_id)})
 
 
 @tool
 def get_spending_summary(client_id: int, months: int = 3) -> str:
-    """Synthèse des dépenses sur N mois : total, remboursements, top catégories, incidents de paiement."""
+    """Spending summary over N months: total, refunds, top categories, payment incidents."""
     s = data.spending_summary(client_id, months)
-    return to_json({"source": f"transactions (client {client_id}, {months} mois)", **s})
+    return to_json({"source": f"transactions (client {client_id}, {months} months)", **s})
 
 
 @tool
 def get_recent_transactions(client_id: int, limit: int = 20, only_incidents: bool = False) -> str:
-    """Dernières transactions du client. only_incidents=True pour ne voir que les paiements en erreur."""
+    """Client's latest transactions. only_incidents=True to see only failed payments."""
     rows = data.recent_transactions(client_id, limit, only_incidents)
     return to_json({"source": f"transactions (client {client_id})", "transactions": rows})
 
 
 @tool
 def get_client_alerts(client_id: int) -> str:
-    """Alertes actives du client : carte compromise, carte expirée, refus pour solde insuffisant, score faible."""
-    return to_json({"alertes": data.client_alerts(client_id)})
+    """Client's active alerts: compromised card, expired card, payments declined for insufficient balance, low credit score."""
+    return to_json({"alerts": data.client_alerts(client_id)})
 
 
 @tool
 def search_bank_rules(question: str, k: int = 5, doc_code: str | None = None) -> str:
-    """Recherche les articles pertinents dans les règles internes de la banque (PDF indexés dans OpenSearch).
-    Les règles sont rédigées en anglais : formule question en anglais avec des mots-clés précis
-    (ex. "overdraft authorised limit fees", "card blocking stolen card", "credit debt-to-income ratio").
-    doc_code restreint à un document : REF (cadre commun), CARD (plafonds cartes), BLK (opposition, contestations),
-    OVD (découvert, frais d'incident), LOAN (éligibilité crédit), KYC (connaissance client, LCB-FT),
-    SAV (épargne), FRD (surveillance, anti-fraude). Chaque article a une source à citer et des renvois (refs)."""
+    """Search the bank's internal rules (PDF policies indexed in OpenSearch) for relevant articles.
+    Use precise English keywords (e.g. "overdraft authorised limit fees", "card blocking stolen card",
+    "credit debt-to-income ratio").
+    doc_code restricts the search to one document: REF (common framework), CARD (card limits), BLK (card blocking, disputes),
+    OVD (overdraft, incident fees), LOAN (credit eligibility), KYC (know your customer, AML/CFT),
+    SAV (savings), FRD (monitoring, anti-fraud). Each article has a source to cite and cross-references (refs)."""
     try:
         return to_json({"clauses": rules.search(question, max(1, min(int(k), 10)), doc_code)})
     except Exception as exc:
-        return to_json({"error": f"règles indisponibles : {exc}"})
+        return to_json({"error": f"rules unavailable: {exc}"})
 
 
 @tool
 def get_bank_rule(article_ids: list[str]) -> str:
-    """Texte complet d'articles des règles internes par identifiant (ex. ["CARD-2.1", "OVD-3.2"]).
-    À utiliser pour suivre les renvois (refs) d'un article trouvé avec search_bank_rules."""
+    """Full text of internal rule articles by id (e.g. ["CARD-2.1", "OVD-3.2"]).
+    Use it to follow the cross-references (refs) of an article found with search_bank_rules."""
     try:
         return to_json({"clauses": rules.get_articles([str(a).upper() for a in article_ids[:10]])})
     except Exception as exc:
-        return to_json({"error": f"règles indisponibles : {exc}"})
+        return to_json({"error": f"rules unavailable: {exc}"})
 
 
 _FORBIDDEN = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do)\b", re.I)
@@ -72,22 +72,27 @@ _FORBIDDEN = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|gra
 
 @tool
 def run_readonly_sql(sql: str) -> str:
-    """Requête SQL libre en lecture seule (SELECT ou WITH) sur les tables clients, cards, transactions.
-    À utiliser seulement si aucun autre outil ne répond à la question. Maximum 200 lignes."""
+    """Free-form read-only SQL query (SELECT or WITH) on the clients, cards and transactions tables.
+    Use it only when no other tool answers the question. At most 200 rows."""
     clean = sql.strip().rstrip(";")
     if ";" in clean or not re.match(r"^(select|with)\b", clean, re.I) or _FORBIDDEN.search(clean):
-        return to_json({"error": "seules les requêtes SELECT uniques sont autorisées"})
+        return to_json({"error": "only single SELECT queries are allowed"})
     try:
         rows = query_readonly(clean)
     except Exception as exc:
         return to_json({"error": str(exc)})
-    return to_json({"source": "requête SQL", "sql": clean, "lignes": rows})
+    return to_json({"source": "SQL query", "sql": clean, "rows": rows})
 
 
-# ---------- Outils écran : ils ne lisent pas la base, ils décrivent un changement d'affichage ----------
+# ---------- Screen tools: they do not read the database, they describe a display change ----------
 
-Level = Literal["critique", "attention", "info", "positif"]
-Section = Literal["revenu", "dette", "score", "depenses", "alertes", "cartes", "categories", "mensuel", "transactions"]
+Level = Literal["critical", "warning", "info", "positive"]
+Section = Literal["income", "debt", "score", "spending", "alerts", "cards", "categories", "monthly", "transactions"]
+
+# The frontend keeps French ids for levels and dashboard sections (data-section): map the English values to them
+_LEVEL_ID = {"critical": "critique", "warning": "attention", "info": "info", "positive": "positif"}
+_SECTION_ID = {"income": "revenu", "debt": "dette", "score": "score", "spending": "depenses", "alerts": "alertes",
+               "cards": "cartes", "categories": "categories", "monthly": "mensuel", "transactions": "transactions"}
 
 
 def _ui(payload: dict) -> str:
@@ -103,11 +108,11 @@ def ui_show_chart(
     series_label: str = "",
     note: str = "",
 ) -> str:
-    """Affiche un graphique sur l'écran du conseiller.
-    À utiliser dès qu'un résultat chiffré se compare (catégories, cartes, clients) ou évolue dans le temps (mois).
-    labels et values doivent avoir la même longueur (24 points maximum) et venir d'un outil de données.
-    chart_type : "bar" pour comparer, "line" pour une évolution, "pie" pour une répartition.
-    note : une phrase courte qui dit ce qu'il faut retenir du graphique."""
+    """Show a chart on the advisor's screen.
+    Use it whenever a numeric result is compared (categories, cards, clients) or changes over time (months).
+    labels and values must have the same length (24 points at most) and come from a data tool.
+    chart_type: "bar" to compare, "line" for a trend, "pie" for a breakdown.
+    note: one short sentence saying what to take away from the chart."""
     n = min(len(labels), len(values), 24)
     return _ui({
         "action": "chart",
@@ -121,30 +126,31 @@ def ui_show_chart(
 
 
 @tool
-def ui_highlight(section: Section, message: str, level: Level = "attention") -> str:
-    """Encadre une zone déjà affichée sur le tableau de bord et y ajoute une note.
-    À utiliser dès que ton raisonnement s'appuie sur une de ces zones :
-    revenu, dette, score (score de crédit), depenses (dépenses 30 jours), alertes, cartes,
-    categories (top dépenses 30 jours), mensuel (graphique des dépenses mensuelles), transactions (dernières opérations).
-    message : une phrase courte expliquant pourquoi la zone compte. level : critique, attention, info ou positif."""
-    return _ui({"action": "highlight", "section": section, "message": message, "level": level})
+def ui_highlight(section: Section, message: str, level: Level = "warning") -> str:
+    """Outline an area already shown on the dashboard and add a note to it.
+    Use it whenever your reasoning relies on one of these areas:
+    income, debt, score (credit score), spending (30-day spending), alerts, cards,
+    categories (top 30-day spending), monthly (monthly spending chart), transactions (recent transactions).
+    message: one short sentence explaining why the area matters. level: critical, warning, info or positive."""
+    return _ui({"action": "highlight", "section": _SECTION_ID.get(section, section), "message": message,
+                "level": _LEVEL_ID.get(level, "info")})
 
 
 @tool
 def ui_show_table(title: str, columns: list[str], rows: list[list[str | int | float | None]], note: str = "") -> str:
-    """Affiche un tableau sur l'écran du conseiller.
-    À utiliser pour une liste de lignes : transactions suspectes, incidents de paiement, résultat d'une requête SQL.
-    Chaque ligne a autant de cellules que columns. 20 lignes maximum, valeurs issues des outils de données."""
+    """Show a table on the advisor's screen.
+    Use it for a list of rows: suspicious transactions, payment incidents, SQL query results.
+    Each row has as many cells as columns. 20 rows at most, values taken from the data tools."""
     clean = [["" if c is None else str(c) for c in r] for r in rows[:20]]
     return _ui({"action": "table", "title": title, "columns": [str(c) for c in columns], "rows": clean, "note": note})
 
 
 @tool
 def ui_show_metric(label: str, value: str, detail: str = "", level: Level = "info") -> str:
-    """Affiche un chiffre clé en grand sur l'écran du conseiller.
-    À utiliser pour un indicateur que tu as calculé ou extrait (taux d'endettement, hausse des dépenses, nombre d'incidents).
-    value est déjà formatée (ex. "2 340 €", "+18 %"). detail : contexte en une phrase. level : critique, attention, info ou positif."""
-    return _ui({"action": "metric", "label": label, "value": value, "detail": detail, "level": level})
+    """Show a key figure in large type on the advisor's screen.
+    Use it for an indicator you computed or extracted (debt ratio, spending increase, number of incidents).
+    value is already formatted (e.g. "€2,340", "+18%"). detail: one sentence of context. level: critical, warning, info or positive."""
+    return _ui({"action": "metric", "label": label, "value": value, "detail": detail, "level": _LEVEL_ID.get(level, "info")})
 
 
 TOOLS = [

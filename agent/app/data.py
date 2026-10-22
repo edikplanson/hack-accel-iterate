@@ -99,7 +99,7 @@ def client_cards(client_id: int) -> list[dict]:
 def spending_summary(client_id: int, months: int = 3) -> dict:
     ref = reference_date()
     if ref is None:
-        return {"error": "aucune transaction en base"}
+        return {"error": "no transactions in the database"}
     params = {"cid": client_id, "ref": ref, "months": f"{int(months)} months"}
     window = "client_id = %(cid)s AND tx_date > %(ref)s::timestamp - %(months)s::interval"
 
@@ -181,22 +181,22 @@ def client_alerts(client_id: int) -> list[dict]:
     alerts = []
     for card in client_cards(client_id):
         if card["card_on_dark_web"]:
-            alerts.append({"niveau": "critique", "type": "carte_compromise", "source": f"cards#{card['card_id']}",
-                           "message": f"Carte {card['card_number_masked']} signalée compromise"})
+            alerts.append({"niveau": "critique", "type": "card_compromised", "source": f"cards#{card['card_id']}",
+                           "message": f"Card {card['card_number_masked']} reported compromised"})
         elif card["expired"]:
-            alerts.append({"niveau": "info", "type": "carte_expiree", "source": f"cards#{card['card_id']}",
-                           "message": f"Carte {card['card_number_masked']} expirée, renouvellement à proposer"})
+            alerts.append({"niveau": "info", "type": "card_expired", "source": f"cards#{card['card_id']}",
+                           "message": f"Card {card['card_number_masked']} expired, offer a renewal"})
 
     summary = spending_summary(client_id, months=1)
     for inc in summary.get("incidents", []):
         if "Insufficient Balance" in (inc["errors"] or ""):
-            alerts.append({"niveau": "attention", "type": "solde_insuffisant", "source": f"transactions client {client_id}",
-                           "message": f"{inc['nb']} paiement(s) refusé(s) pour solde insuffisant sur 30 jours"})
+            alerts.append({"niveau": "attention", "type": "insufficient_balance", "source": f"transactions client {client_id}",
+                           "message": f"{inc['nb']} payment(s) declined for insufficient balance over 30 days"})
 
     profile = client_profile(client_id)
     if profile and profile["credit_score"] is not None and profile["credit_score"] < 600:
-        alerts.append({"niveau": "attention", "type": "score_faible", "source": f"clients#{client_id}",
-                       "message": f"Score de crédit faible ({profile['credit_score']})"})
+        alerts.append({"niveau": "attention", "type": "low_credit_score", "source": f"clients#{client_id}",
+                       "message": f"Low credit score ({profile['credit_score']})"})
     return alerts
 
 

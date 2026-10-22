@@ -19,7 +19,7 @@ services:
       OPENSEARCH_INDEX: ${OPENSEARCH_INDEX:-rules-current}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
-      BANK_NAME: ${BANK_NAME:-Banque Horizon}
+      BANK_NAME: ${BANK_NAME:-Horizon Bank}
       PORT: "8000"
     ports:
       - "8000:8000"

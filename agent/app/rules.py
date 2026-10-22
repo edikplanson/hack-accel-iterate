@@ -13,7 +13,7 @@ def client() -> OpenSearch:
     global _client
     if _client is None:
         if not OPENSEARCH_URL:
-            raise RuntimeError("OPENSEARCH_URL manquant")
+            raise RuntimeError("OPENSEARCH_URL missing")
         # L'URL Aiven embarque les identifiants (https://user:pass@host:port)
         _client = OpenSearch(OPENSEARCH_URL, verify_certs=True, timeout=10)
     return _client

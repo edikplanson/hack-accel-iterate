@@ -23,7 +23,7 @@ def pool() -> ConnectionPool:
     global _pool
     if _pool is None:
         if not DATABASE_URL:
-            raise RuntimeError("DATABASE_URL manquant")
+            raise RuntimeError("DATABASE_URL missing")
         _pool = ConnectionPool(
             DATABASE_URL,
             min_size=1,
