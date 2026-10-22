@@ -23,6 +23,7 @@ class Source(BaseModel):
     page: int | None = None
     version: str | None = None
     effective_date: str | None = None
+    applicability: str | None = None
     content_hash: str | None = None
     passage: str | None = None
     retrieved_at: datetime = Field(default_factory=now)

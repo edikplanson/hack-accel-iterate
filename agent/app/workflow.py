@@ -52,6 +52,8 @@ def prepare(value):
             choice=plan(turn.text)
             break
     state.issue_summary=choice[0]
+    if choice[2] is None and turns and any(w in normal(turns[-1].text) for w in ('regle','procedure','autorise')):
+        choice=(choice[0],choice[1],choice[0]+' regles procedure',choice[3])
     state.missing_information=choice[3]
     if state.issue_details.declared_amount_eur is None and 'retrait' in state.issue_summary.lower():
         state.missing_information.append('Quel montant souhaitez-vous retirer ?')
@@ -97,6 +99,16 @@ def retrieve(value):
     if value.get('policy_query'):
         try:
             state.documentation=tool('search_bank_rules',lambda:documents().search(value['policy_query'],limit=3))
+            # A known product-scope mismatch cannot become policy guidance from lexical similarity.
+            required={'Demande concernant une carte':('carte','plafond','opposition'),
+                      'Demande de retrait / assurance-vie':('assurance','rachat'),
+                      'Qualification du besoin financier':('credit','pret','financement')}.get(state.issue_summary)
+            if required and state.documentation.status=='ok':
+                passages=[s for s in state.documentation.passages if not s.applicability or any(term in normal(s.applicability) for term in required)]
+                if state.documentation.passages and not passages:
+                    state.documentation=SearchResult(status='missing',warnings=state.documentation.warnings+['Les passages retrouvés couvrent un autre produit; aucune procédure applicable retenue.'])
+                else:
+                    state.documentation.passages=passages
             emit('data_retrieved','search_bank_rules',f'{len(state.documentation.passages)} passages retrouvés')
         except Exception:
             state.documentation=SearchResult(status='unavailable')

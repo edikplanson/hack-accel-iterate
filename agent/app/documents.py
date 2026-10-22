@@ -76,6 +76,7 @@ def result_from_chunks(chunks: list[dict]) -> SearchResult:
             source_id=chunk["chunk_id"], kind="document", title=chunk["title"],
             document_id=chunk["document_id"], page=chunk["page"], version=chunk["version"],
             effective_date=chunk.get("effective_date"), content_hash=chunk["content_hash"],
+            applicability=chunk.get("applicability"),
             passage=chunk["text"], fictional=chunk.get("fictional", False),
         ))
     conflicting = [key for key, values in rules.items() if len(values) > 1]
