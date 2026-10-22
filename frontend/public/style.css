@@ -182,6 +182,14 @@ body {
   transform: scaleX(0); transform-origin: left; transition: transform .45s cubic-bezier(.2, .8, .2, 1) .15s;
 }
 .kpi.agent-hl .kpi-label::after { transform: scaleX(1); }
+/* Outside KPI cards, the note is a label pinned to the section's top-right corner: it never changes the layout */
+#dashboard [data-section] { position: relative; }
+#dashboard [data-section]:not(.kpi) > .agent-note {
+  position: absolute; top: 14px; right: 16px; z-index: 2; max-width: 62%; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: #fff; border-radius: 6px; box-shadow: 0 4px 14px -6px rgba(29, 42, 36, .35); animation: agent-in .35s ease-out both;
+}
+#dashboard [data-section="alertes"] > .agent-note { top: -13px; }
 /* 2 lines at most in a KPI card, so a note barely changes the height of the KPI row (full text on hover) */
 .kpi .agent-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .kpi-spark { display: block; width: 100%; height: 24px; margin-top: 8px; overflow: visible; }
@@ -235,8 +243,34 @@ body {
 .is-fading { opacity: 0; transform: translateY(6px); }
 .slot-title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-soft); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stage-canvas { position: relative; flex: 1; min-height: 0; margin-top: 6px; }
-.stage-caption { margin-top: 6px; font-size: 12.5px; color: #e8f1ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage-caption { margin-top: 6px; font-size: 12.5px; line-height: 1.35; color: #e8f1ec; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .stage-caption b { color: var(--gold-soft); font-weight: 700; }
+/* Previews of sections below the fold */
+.stage-preview { gap: 8px; }
+.pv-list { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 0; overflow: hidden; }
+.pv-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.pv-name { flex: 1; min-width: 0; color: #e8f1ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-val { color: var(--gold-soft); font-weight: 700; font-variant-numeric: tabular-nums; }
+.pv-sub { font-size: 11px; color: rgba(207, 224, 215, .75); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pv-list > div > .pv-sub { display: block; margin-top: 3px; }
+.stage-preview[data-kind="capacity"] .hbar { height: 10px; }
+.pv-kpi { font-size: 12.5px; color: #e8f1ec; margin-top: auto; }
+.pv-kpi b { color: var(--gold-soft); }
+.pv-alert { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: #e8f1ec; line-height: 1.35; }
+.pv-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #38bdf8; }
+.lv-critique .pv-dot { background: #f87171; }
+.lv-attention .pv-dot { background: #fbbf24; }
+.lv-positif .pv-dot { background: #4ade80; }
+/* Gauges (card usage: amber above 70%, red above 90%) and horizontal bars */
+.gauge, .hbar { height: 6px; border-radius: 999px; background: rgba(230, 213, 174, .14); overflow: hidden; margin-top: 5px; }
+.gauge > span, .hbar > span { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #8a6d32, var(--gold)); transition: width .9s cubic-bezier(.25, 1, .5, 1); }
+.hbar.is-debt > span { background: linear-gradient(90deg, #b45309, #f59e0b); }
+.gauge.is-amber > span { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.gauge.is-red > span { background: linear-gradient(90deg, #b91c1c, #f87171); }
+.bank-card .bc-gauge { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; height: 5px; border-radius: 0; background: rgba(255, 255, 255, .08); opacity: 0; transition: opacity .3s; }
+.bc-usage { font-size: 10px; color: rgba(255, 255, 255, .7); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .3s .3s; }
+.gauges-on .bc-gauge, .gauges-on .bc-usage { opacity: 1; }
+
 @container (max-width: 520px) {
   .stage-body { height: auto; flex-direction: column; }
   .stage-canvas { flex: none; height: 170px; }

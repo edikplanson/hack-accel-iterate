@@ -154,8 +154,10 @@ function renderDashboard(d, monthly) {
   const cards = d.cartes.map((c) => {
     const status = c.card_on_dark_web ? ["compromised", "Compromised"] : c.expired ? ["expired", "Expired"] : ["active", "Active"];
     const brand = String(c.card_brand || "").toLowerCase().replace(/[^a-z]/g, "");
+    const u = usage(c);
     return `
       <div class="bank-card bc-${esc(brand)} is-${status[0]}">
+        <div class="bc-gauge gauge ${usageClass(u)}" title="30-day spending ${eur(c.depenses_30j)} of ${eur(c.credit_limit)}"><span data-fill="${fillPct(u)}"></span></div>
         <div class="flex items-start justify-between">
           <span class="bc-brand">${esc(c.card_brand)}</span>
           <span class="bc-status">${status[1]}</span>
@@ -164,7 +166,8 @@ function renderDashboard(d, monthly) {
         <div class="bc-number">•••• •••• •••• ${esc(last4(c.card_number_masked))}</div>
         <div class="flex items-end justify-between gap-2">
           <div><div class="bc-label">${esc(c.card_type)}</div><div class="bc-value">exp. ${fmtExpiry(c.expires)}</div></div>
-          <div class="text-right"><div class="bc-label">Limit</div><div class="bc-value">${eur(c.credit_limit)}</div></div>
+          <div class="text-right"><div class="bc-label">Limit</div><div class="bc-value">${eur(c.credit_limit)}</div>
+            <div class="bc-usage">${u == null ? "usage n/a" : `${pct(u)} used, 30 days`}</div></div>
         </div>
       </div>`;
   }).join("");
@@ -386,6 +389,8 @@ function highlight(ui) {
   void el.offsetWidth; // restarts the animation if the area was already outlined
   el.classList.add("agent-hl", `hl-${level(ui.level)}`);
   if (el.classList.contains("kpi")) countUp(el.querySelector(".kpi-value"));
+  if (ui.section === "cartes") fillBars(el);
+  bringToStage(ui.section);
   el.querySelector(":scope > .agent-note")?.remove();
   const note = document.createElement("div");
   note.className = "agent-note";
@@ -406,9 +411,23 @@ function applyUi(ui) {
   if (fn) fn(ui);
 }
 
+/* ---------- Usage gauges and bars (values from the dashboard API) ---------- */
+const usage = (c) => (Number(c.credit_limit) > 0 ? Number(c.depenses_30j || 0) / Number(c.credit_limit) : null);
+const usageClass = (u) => (u == null ? "" : u > 0.9 ? "is-red" : u > 0.7 ? "is-amber" : "");
+const fillPct = (x) => `${Math.min(100, Math.max(0, (x || 0) * 100)).toFixed(1)}%`;
+
+// Bars start empty and fill to their data-fill width (instant with reduced motion: no transition)
+function fillBars(root) {
+  const bars = [...root.querySelectorAll("[data-fill]")];
+  bars.forEach((b) => { b.style.transition = "none"; b.style.width = "0"; });
+  void root.offsetWidth;
+  bars.forEach((b) => { b.style.transition = ""; b.style.width = b.dataset.fill; });
+  root.classList.add("gauges-on");
+}
+
 /* ---------- Agent insight stage (sticky, under the KPI row) ---------- */
 // One Chart.js instance morphed from answer to answer; previews of off-screen sections come to it instead of scrolling
-const stage = { chart: null, type: null, fmt: eur, queue: Promise.resolve(), touched: null, question: "" };
+const stage = { chart: null, type: null, fmt: eur, queue: Promise.resolve(), touched: null, question: "", previewKind: null };
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const wait = (ms) => new Promise((r) => setTimeout(r, reducedMotion() ? 0 : ms));
 const GOLD = "#c9a45c";
@@ -509,7 +528,7 @@ function chartCaption(ui) {
   if (Array.isArray(ui.values2)) {
     let best = -1, bi = 0;
     v.forEach((x, i) => { const lim = Number(ui.values2[i]); if (lim > 0 && x / lim > best) { best = x / lim; bi = i; } });
-    return best < 0 ? "" : `Highest usage: <b>${esc(L[bi])}</b> at <b>${pct(best)}</b> of its limit (${fmt(v[bi])} of ${fmt(ui.values2[bi])})`;
+    return best < 0 ? "" : `Highest usage: <b>${esc(L[bi])}</b> at <b>${pct(best)}</b> of its limit`;
   }
   const label = ui.series_label || "Value";
   if (ui.chart_type === "line" && v.length > 1 && v[0]) {
@@ -522,6 +541,81 @@ function chartCaption(ui) {
     return `<b>${total}</b> ${esc(label.toLowerCase())} from ${esc(L[0])} to ${esc(L[L.length - 1])}, peak <b>${v[peak]}</b> in ${esc(L[peak])}`;
   }
   return `Peak: <b>${fmt(v[peak])}</b> in ${esc(L[peak])}`;
+}
+
+// Section below the fold targeted by the answer: a compact preview comes to the stage, the real section stays put
+const PREVIEW_OF = { cartes: "cards", categories: "categories", alertes: "alerts", revenu: "capacity", dette: "capacity" };
+
+const PREVIEWS = {
+  cards: (d) => {
+    const rows = d.cartes.map((c) => ({ c, u: usage(c) })).sort((a, b) => (b.u ?? -1) - (a.u ?? -1));
+    if (!rows.length) return "";
+    return `<div class="slot-title">Cards · 30-day usage of the limit</div>
+      <div class="pv-list">${rows.slice(0, 4).map(({ c, u }) => `
+        <div title="30-day spending ${eur(c.depenses_30j)} of ${eur(c.credit_limit)}">
+          <div class="pv-row"><span class="pv-name">${esc(c.card_brand)} ${esc(c.card_type)} ••${esc(last4(c.card_number_masked))}</span>
+            <span class="pv-sub">${eur(c.depenses_30j)} / ${eur(c.credit_limit)}</span><span class="pv-val">${u == null ? "n/a" : pct(u)}</span></div>
+          <div class="gauge ${usageClass(u)}"><span data-fill="${fillPct(u)}"></span></div>
+        </div>`).join("")}</div>
+      ${rows.length > 4 ? `<div class="pv-sub">+${rows.length - 4} more in Cards below</div>` : ""}`;
+  },
+  categories: (d) => {
+    const top = d.categories_30j.slice(0, 3);
+    if (!top.length) return "";
+    const max = Math.max(...top.map((c) => Number(c.total))) || 1;
+    return `<div class="slot-title">Top spending · 30 days</div>
+      <div class="pv-list">${top.map((c) => `
+        <div>
+          <div class="pv-row"><span class="pv-name">${esc(c.categorie)}</span><span class="pv-val">${eur(c.total)}</span></div>
+          <div class="hbar"><span data-fill="${fillPct(Number(c.total) / max)}"></span></div>
+          <div class="pv-sub">${esc(c.nb)} transaction(s)</div>
+        </div>`).join("")}</div>`;
+  },
+  alerts: (d) => `<div class="slot-title">Alerts</div>
+    <div class="pv-list">${d.alertes.slice(0, 4).map((a) => `
+      <div class="pv-alert lv-${esc(level(a.niveau))}"><span class="pv-dot"></span><span>${esc(a.message)}</span></div>`).join("") || '<div class="pv-sub">No alerts</div>'}</div>
+    ${d.alertes.length > 4 ? `<div class="pv-sub">+${d.alertes.length - 4} more below</div>` : ""}`,
+  capacity: (d) => {
+    const p = d.profil, inc = Number(p.yearly_income || 0), debt = Number(p.total_debt || 0), max = Math.max(inc, debt) || 1;
+    return `<div class="slot-title">Financial capacity</div>
+      <div class="pv-list">${[["Annual income", inc, ""], ["Total debt", debt, "is-debt"]].map(([label, v, cls]) => `
+        <div>
+          <div class="pv-row"><span class="pv-name">${label}</span><span class="pv-val">${eur(v)}</span></div>
+          <div class="hbar ${cls}"><span data-fill="${fillPct(v / max)}"></span></div>
+        </div>`).join("")}</div>
+      ${p.debt_to_income_ratio == null ? "" : `<div class="pv-kpi">Debt = <b>${p.debt_to_income_ratio.toLocaleString(LOCALE)}×</b> annual income · score <b>${esc(p.credit_score)}</b></div>`}`;
+  },
+};
+
+function bringToStage(section) {
+  if (!state.dash || !stage.touched) return;
+  if (section === "mensuel") {
+    if (stage.touched.has("chart")) return; // the chart of the question itself wins
+    stage.touched.add("chart");
+    const rows = fullMonths(state.monthly, state.dash.kpis.date_reference);
+    stageChart({ chart_type: "bar", title: "Monthly spending (full months)", series_label: "Spending",
+      labels: rows.map((r) => r.mois), values: rows.map((r) => Number(r.depenses)) });
+    return;
+  }
+  const kind = PREVIEW_OF[section];
+  if (!kind || (stage.touched.has("preview") && stage.previewKind === kind)) return; // income + debt: one preview
+  const html = PREVIEWS[kind](state.dash);
+  if (!html) return;
+  stage.touched.add("preview");
+  stage.previewKind = kind;
+  enqueue(async () => {
+    const slot = document.querySelector("#insight-stage .stage-preview");
+    if (!slot) return;
+    if (!slot.hidden) {
+      slot.classList.add("is-fading");
+      await wait(300);
+    }
+    slot.dataset.kind = kind;
+    slot.innerHTML = html;
+    slot.hidden = false;
+    fillBars(slot);
+    requestAnimationFrame(() => slot.classList.remove("is-fading"));
+  });
 }
 
 function stageChart(ui) {

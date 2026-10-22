@@ -205,9 +205,14 @@ def dashboard(client_id: int) -> dict | None:
     if not profile:
         return None
     s30 = spending_summary(client_id, months=1)
+    # Dépenses 30 jours par carte (même requête que le graphique "dépenses vs plafond") : jauges d'utilisation
+    spent = {r["card_id"]: r["depenses_30j"] for r in card_spending_vs_limit(client_id)}
+    cards = client_cards(client_id)
+    for card in cards:
+        card["depenses_30j"] = spent.get(card["card_id"], 0)
     return {
         "profil": profile,
-        "cartes": client_cards(client_id),
+        "cartes": cards,
         "kpis": {
             "depenses_30j": s30.get("total_depenses"),
             "transactions_30j": s30.get("nb_transactions"),
