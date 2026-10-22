@@ -1,6 +1,6 @@
 # Main-branch agent adaptation
 
-This directory adapts the existing Horizon frontend and public PostgreSQL client/card/transaction schema. It does not replace the frontend, import the reference workbook, change the banking schema, or modify a dev branch. Prior implementation/subagent work remains available on hackathon/integration and the specialist branches; only reusable session, evidence, TLS and inference-budget parts were ported here.
+This directory adapts the existing Horizon frontend and public PostgreSQL client/card/transaction schema. Changes are confined to agent/ on dev-arthur-agents; main and the other dev branches remain untouched. It does not replace the frontend, import the reference workbook or change the banking schema. Prior implementation/subagent work remains available on hackathon/integration and the specialist branches; only reusable session, evidence, TLS and inference-budget parts were ported here.
 
 ## Preserved frontend contracts
 
@@ -11,6 +11,12 @@ The served frontend can keep calling:
 - POST /api/clients/{id}/brief.
 
 Responses retain answer, thread_id, steps (`tool`, `args`, `ok`) and latency_s. Added fields include status, issue_summary, clarification_questions, sources, warnings, trace_id and session_id. Guidance/questions/warnings are also included in answer so the existing frontend can display them without a frontend deployment. Chart/action execution is not added.
+
+For example, the chat response retains this shape (values below are illustrative):
+
+```json
+{"answer":"Demande concernant une carte…","thread_id":"client-825-example","steps":[{"tool":"Données client","args":{},"ok":true}],"latency_s":0.5,"session_id":"client-825-example","status":"needs_clarification","issue_summary":"Demande concernant une carte","clarification_questions":["Quelle carte est concernée ?"],"sources":[{"source_id":"clients#825","kind":"database","title":"Profil client","table":"clients","record_id":"825"}],"warnings":["Synthèse Claude désactivée; aucun appel d’inférence."],"trace_id":"example-trace"}
+```
 
 An explicit client_id is the advisor's selected dossier. Reusing a thread for another client returns 409. Transcript-supplied IDs cannot switch the selected customer. The current banking dataset has no names, phone numbers or assurance-vie contracts: these gaps are reported explicitly; workbook facts are never substituted.
 
@@ -80,3 +86,5 @@ PYTHONPATH=. .tmp/codex/main-agent/venv/bin/python -m pytest -q --basetemp=.tmp/
 ```
 
 Fixtures are explicitly synthetic records shaped like main's schema. Optional TEST_DATABASE_URL integration checks refuse managed hosts and any database except local copilot_main_agent_test; they create small fixture tables, change/restore a test income, check API shapes and verify persistence after pool replacement. Do not point tests at the served database. Prior reference-workbook evaluations are preserved on the integration branch and are not measurements of this main-schema adaptation.
+
+The earlier specialist worktrees are retained, with clean tracked work at PostgreSQL d1244e3, OpenSearch 0bbf29c, orchestration/evaluations b41f05d and deployment 2ac3cfe. The reference integration is saved at a5e2e88. They are implementation history, not additional runtime services.
