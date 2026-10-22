@@ -198,12 +198,13 @@ function renderDashboard(d, monthly) {
     </div>
 
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
-      <div class="card" id="kpi-revenu" data-section="revenu"><div class="kpi-label">Annual income</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
-      <div class="card" id="kpi-dette" data-section="dette"><div class="kpi-label">Total debt</div><div class="kpi-value">${eur(p.total_debt)}</div>
+      <div class="card kpi" id="kpi-revenu" data-section="revenu"><div class="kpi-label">Annual income</div>${kpiValue(p.yearly_income, "eur")}</div>
+      <div class="card kpi" id="kpi-dette" data-section="dette"><div class="kpi-label">Total debt</div>${kpiValue(p.total_debt, "eur")}
         <div class="text-xs text-slate-500 mt-1">${p.debt_to_income_ratio == null ? "n/a" : p.debt_to_income_ratio.toLocaleString(LOCALE)}× annual income</div></div>
-      <div class="card" id="kpi-score" data-section="score"><div class="kpi-label">Credit score</div><div class="kpi-value">${esc(p.credit_score)}</div></div>
-      <div class="card" id="kpi-depenses" data-section="depenses"><div class="kpi-label">30-day spending</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
-        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div></div>
+      <div class="card kpi" id="kpi-score" data-section="score"><div class="kpi-label">Credit score</div>${kpiValue(p.credit_score, "int")}</div>
+      <div class="card kpi" id="kpi-depenses" data-section="depenses"><div class="kpi-label">30-day spending</div>${kpiValue(k.depenses_30j, "eur")}
+        <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} transactions · ${esc(k.incidents_30j)} incident(s)</div>
+        ${sparkline(fullMonths(monthly, k.date_reference).slice(-3))}</div>
     </div>
 
     ${stageHtml()}
@@ -235,6 +236,49 @@ function renderDashboard(d, monthly) {
       scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => eur(v) } } },
     },
   });
+}
+
+/* ---------- KPI cards: count-up and sparkline ---------- */
+const KPI_FMT = { eur, int: (x) => String(Math.round(x)) };
+
+function kpiValue(v, fmt) {
+  return `<div class="kpi-value" data-value="${v == null ? "" : Number(v)}" data-fmt="${fmt}">${v == null ? "n/a" : KPI_FMT[fmt](Number(v))}</div>`;
+}
+
+// Monthly rows without the reference month, which is still in progress
+function fullMonths(monthly, ref) {
+  const current = String(ref || "").slice(0, 7);
+  return (monthly || []).filter((m) => m.mois !== current);
+}
+
+// Spending of the last full months (PostgreSQL); the path draws itself when the card is highlighted
+function sparkline(rows) {
+  if (rows.length < 2) return "";
+  const v = rows.map((r) => Number(r.depenses)), max = Math.max(...v), min = Math.min(...v), span = max - min || 1;
+  const pts = v.map((x, i) => `${((i / (v.length - 1)) * 116 + 2).toFixed(1)},${(25 - ((x - min) / span) * 21).toFixed(1)}`);
+  const title = rows.map((r) => `${fmtMonth(r.mois)} ${eur(r.depenses)}`).join(", ");
+  return `<svg class="kpi-spark" viewBox="0 0 120 28" preserveAspectRatio="none" role="img" aria-label="Spending, last ${rows.length} full months: ${esc(title)}">
+    <title>${esc(title)}</title><path d="M${pts.join(" L")}" pathLength="1"/></svg>`;
+}
+
+// Counts from the value shown before (or 0, also when it has not changed) to the value from the API
+function countUp(el) {
+  if (!el || el.dataset.value === "") return;
+  const target = Number(el.dataset.value), prev = Number(el.dataset.shown ?? NaN), fmt = KPI_FMT[el.dataset.fmt] || eur;
+  const from = Number.isFinite(prev) && prev !== target ? prev : 0;
+  el.dataset.shown = target;
+  cancelAnimationFrame(el._raf);
+  if (reducedMotion()) {
+    el.textContent = fmt(target);
+    return;
+  }
+  const t0 = performance.now();
+  const tick = (t) => {
+    const k = Math.min(1, (t - t0) / 800);
+    el.textContent = fmt(from + (target - from) * (1 - Math.pow(1 - k, 4)));
+    if (k < 1) el._raf = requestAnimationFrame(tick);
+  };
+  el._raf = requestAnimationFrame(tick);
 }
 
 /* ---------- Agent-driven screen ("ui" events) ---------- */
@@ -341,10 +385,11 @@ function highlight(ui) {
   el.classList.remove(...HL_CLASSES);
   void el.offsetWidth; // restarts the animation if the area was already outlined
   el.classList.add("agent-hl", `hl-${level(ui.level)}`);
+  if (el.classList.contains("kpi")) countUp(el.querySelector(".kpi-value"));
   el.querySelector(":scope > .agent-note")?.remove();
   const note = document.createElement("div");
   note.className = "agent-note";
-  note.textContent = ui.message || "";
+  note.textContent = note.title = ui.message || "";
   el.appendChild(note);
 }
 
