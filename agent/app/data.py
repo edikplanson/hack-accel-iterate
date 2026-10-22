@@ -1,6 +1,5 @@
 """Requêtes métier utilisées à la fois par l'API (tableau de bord) et par les outils de l'agent."""
 import json
-from functools import lru_cache
 from pathlib import Path
 
 from .db import query
@@ -14,7 +13,6 @@ def mcc_label(mcc) -> str:
     return MCC_LABELS.get(str(mcc), f"MCC {mcc}")
 
 
-@lru_cache(maxsize=1)
 def reference_date():
     """Date de la dernière transaction : sert de "aujourd'hui" pour les fenêtres glissantes."""
     rows = query("SELECT max(tx_date) AS ref FROM transactions")
@@ -46,11 +44,15 @@ def client_profile(client_id: int) -> dict | None:
     return p
 
 
+def client_exists(client_id: int) -> bool:
+    return bool(query('SELECT client_id FROM clients WHERE client_id=%s',(client_id,)))
+
+
 def client_cards(client_id: int) -> list[dict]:
     ref = reference_date()
     rows = query(
         """
-        SELECT card_id, card_brand, card_type, card_number_masked, expires, has_chip,
+        SELECT client_id, card_id, card_brand, card_type, card_number_masked, expires, has_chip,
                num_cards_issued, credit_limit, acct_open_date, year_pin_last_changed, card_on_dark_web
         FROM cards WHERE client_id = %s ORDER BY card_id
         """,
@@ -129,7 +131,7 @@ def monthly_spending(client_id: int, months: int = 12) -> list[dict]:
 def recent_transactions(client_id: int, limit: int = 20, only_incidents: bool = False) -> list[dict]:
     rows = query(
         """
-        SELECT tx_id, tx_date, amount, use_chip, merchant_city, merchant_state, mcc, errors, card_id
+        SELECT client_id, tx_id, tx_date, amount, use_chip, merchant_city, merchant_state, mcc, errors, card_id
         FROM transactions
         WHERE client_id = %(cid)s AND (NOT %(inc)s OR errors IS NOT NULL)
         ORDER BY tx_date DESC LIMIT %(limit)s

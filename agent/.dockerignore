@@ -1,0 +1,10 @@
+.env
+.env.*
+*.pem
+*.key
+tests
+.tmp
+__pycache__
+*.pyc
+.tmp
+node_modules
