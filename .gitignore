@@ -5,3 +5,6 @@ data/
 __pycache__/
 *.pyc
 .venv/
+.tmp/
+node_modules/
+/*/*.sql
