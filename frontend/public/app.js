@@ -371,11 +371,12 @@ const pct = (x) => `${Math.round(x * 100)}%`;
 const signedPct = (x) => `${x >= 0 ? "+" : "-"}${Math.abs(Math.round(x * 100))}%`;
 const fmtMonth = (s) => (/^\d{4}-\d{2}$/.test(s) ? new Date(`${s}-01T00:00:00`).toLocaleDateString(LOCALE, { month: "short", year: "2-digit" }) : String(s));
 const shortLabel = (s) => fmtMonth(String(s)).replace(/\*{4}\s*/, "••");
+const tickLabel = (s) => { const m = shortLabel(s).match(/^(.*\S)\s+(••\d+)$/); return m ? [m[1], m[2]] : shortLabel(s); }; // card: 2 lines
 
 function stageHtml() {
   const ghost = [38, 62, 48, 80, 56, 70, 44].map((h) => `<span style="height:${h}%"></span>`).join("");
   return `
-    <section id="insight-stage" class="insight-stage" data-state="empty">
+    <div class="stage-dock"><section id="insight-stage" class="insight-stage" data-state="empty">
       <div class="stage-head"><span class="stage-badge">Agent insight</span><span class="stage-title"></span></div>
       <div class="stage-empty"><div class="stage-ghost">${ghost}</div><span>Ask a question to see the data move</span></div>
       <div class="stage-body">
@@ -386,7 +387,7 @@ function stageHtml() {
         </div>
         <div class="stage-preview is-fading" hidden></div>
       </div>
-    </section>`;
+    </section></div>`;
 }
 
 function resetStage() {
@@ -439,7 +440,7 @@ function stageChartConfig(type) {
         tooltip: { callbacks: { label: (c) => `${c.dataset.label ? `${c.dataset.label}: ` : ""}${stage.fmt(c.parsed.y)}` } },
       },
       scales: {
-        x: { grid: { display: false }, border: { color: grid }, ticks: { color: tick, maxRotation: 0, autoSkip: true } },
+        x: { grid: { display: false }, border: { color: grid }, ticks: { color: tick, maxRotation: 0, autoSkip: true, font: { size: 11 } } },
         y: { beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { color: tick, maxTicksLimit: 5, callback: (v) => stage.fmt(v) } },
       },
     },
@@ -473,7 +474,7 @@ function chartCaption(ui) {
   const peak = v.indexOf(Math.max(...v));
   if (ui.unit === "count") {
     const total = v.reduce((a, b) => a + b, 0);
-    return `<b>${total}</b> ${esc(label.toLowerCase())} over ${v.length} months, peak <b>${v[peak]}</b> in ${esc(L[peak])}`;
+    return `<b>${total}</b> ${esc(label.toLowerCase())} from ${esc(L[0])} to ${esc(L[L.length - 1])}, peak <b>${v[peak]}</b> in ${esc(L[peak])}`;
   }
   return `Peak: <b>${fmt(v[peak])}</b> in ${esc(L[peak])}`;
 }
@@ -507,7 +508,7 @@ function stageChart(ui) {
     // Dataset objects are kept and mutated so Chart.js animates the existing bars and points to their new values
     series.forEach((serie, i) => Object.assign(ds[i] || (ds[i] = {}), serie, datasetStyle(type, i)));
     ds.length = series.length;
-    stage.chart.data.labels = (ui.labels || []).map(shortLabel);
+    stage.chart.data.labels = (ui.labels || []).map(tickLabel);
     stage.chart.options.plugins.legend.display = series.length > 1;
     stage.chart.options.animation = reducedMotion() ? false : { duration: 900, easing: "easeOutQuart" };
     stage.chart.update();

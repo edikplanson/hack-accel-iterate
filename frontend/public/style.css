@@ -187,8 +187,12 @@ body {
   .bank-card { transition: none; }
 }
 /* ---------- Agent insight stage: sticky, the visuals come to the advisor ---------- */
+/* Sticky dock: its ivory top padding hides what scrolls between the header and the stage */
+#dashboard > .stage-dock { position: sticky; top: -24px; z-index: 20; margin-top: 0; padding-top: 24px; background: var(--ivory); overflow-anchor: none; }
+/* The model's panels change height between answers: never use them as the scroll anchor, so the view does not jump */
+#agent-canvas { overflow-anchor: none; }
 .insight-stage {
-  position: sticky; top: 0; z-index: 20; container-type: inline-size;
+  container-type: inline-size;
   padding: 14px 18px 12px; border-radius: 18px; color: #fff;
   border: 1px solid rgba(201, 164, 92, .35);
   background:
