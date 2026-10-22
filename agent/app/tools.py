@@ -4,7 +4,7 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
-from . import data
+from . import data, rules
 from .db import query, query_readonly, to_json
 
 
@@ -44,31 +44,27 @@ def get_client_alerts(client_id: int) -> str:
 
 
 @tool
-def search_bank_rules(question: str, k: int = 5) -> str:
-    """Recherche les clauses pertinentes dans les règles internes de la banque (PDF indexés)."""
+def search_bank_rules(question: str, k: int = 5, doc_code: str | None = None) -> str:
+    """Recherche les articles pertinents dans les règles internes de la banque (PDF indexés dans OpenSearch).
+    Les règles sont rédigées en anglais : formule question en anglais avec des mots-clés précis
+    (ex. "overdraft authorised limit fees", "card blocking stolen card", "credit debt-to-income ratio").
+    doc_code restreint à un document : REF (cadre commun), CARD (plafonds cartes), BLK (opposition, contestations),
+    OVD (découvert, frais d'incident), LOAN (éligibilité crédit), KYC (connaissance client, LCB-FT),
+    SAV (épargne), FRD (surveillance, anti-fraude). Chaque article a une source à citer et des renvois (refs)."""
     try:
-        count = query("SELECT count(*) AS n FROM policy_chunks")[0]["n"]
-    except Exception as exc:  # table absente
+        return to_json({"clauses": rules.search(question, max(1, min(int(k), 10)), doc_code)})
+    except Exception as exc:
         return to_json({"error": f"règles indisponibles : {exc}"})
-    if count == 0:
-        return to_json({"error": "aucune règle interne indexée pour le moment"})
-    # Recherche plein texte PostgreSQL (français), termes combinés en OU et classés par pertinence
-    rows = query(
-        """
-        WITH q AS (
-            SELECT NULLIF(replace(plainto_tsquery('french', %(q)s)::text, '&', '|'), '')::tsquery AS tsq
-        )
-        SELECT doc_name, section, page, content,
-               ts_rank(to_tsvector('french', content), q.tsq) AS score
-        FROM policy_chunks, q
-        WHERE to_tsvector('french', content) @@ q.tsq
-        ORDER BY score DESC LIMIT %(k)s
-        """,
-        {"q": question, "k": min(int(k), 10)},
-    )
-    for r in rows:
-        r["source"] = f"{r['doc_name']} §{r['section']}"
-    return to_json({"clauses": rows})
+
+
+@tool
+def get_bank_rule(article_ids: list[str]) -> str:
+    """Texte complet d'articles des règles internes par identifiant (ex. ["CARD-2.1", "OVD-3.2"]).
+    À utiliser pour suivre les renvois (refs) d'un article trouvé avec search_bank_rules."""
+    try:
+        return to_json({"clauses": rules.get_articles([str(a).upper() for a in article_ids[:10]])})
+    except Exception as exc:
+        return to_json({"error": f"règles indisponibles : {exc}"})
 
 
 _FORBIDDEN = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do)\b", re.I)
@@ -158,6 +154,7 @@ TOOLS = [
     get_recent_transactions,
     get_client_alerts,
     search_bank_rules,
+    get_bank_rule,
     run_readonly_sql,
     ui_show_chart,
     ui_highlight,

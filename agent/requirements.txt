@@ -5,4 +5,5 @@ langchain-core>=1.0,<2
 langchain-anthropic>=1.0,<2
 psycopg[binary]>=3.2
 psycopg_pool>=3.2
+opensearch-py>=2.7
 python-dotenv>=1.0
