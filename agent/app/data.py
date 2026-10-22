@@ -218,3 +218,37 @@ def dashboard(client_id: int) -> dict | None:
         "alertes": client_alerts(client_id),
         "dernieres_transactions": recent_transactions(client_id, limit=10),
     }
+
+
+def incidents_by_month(client_id: int, months: int = 6) -> list[dict]:
+    ref = reference_date()
+    if ref is None:
+        return []
+    return query(
+        """
+        SELECT to_char(date_trunc('month', tx_date), 'YYYY-MM') AS mois,
+               count(*) FILTER (WHERE errors IS NOT NULL) AS incidents
+        FROM transactions
+        WHERE client_id = %(cid)s AND tx_date > %(ref)s::timestamp - %(months)s::interval
+        GROUP BY 1 ORDER BY 1
+        """,
+        {"cid": client_id, "ref": ref, "months": f"{int(months)} months"},
+    )
+
+
+def card_spending_vs_limit(client_id: int) -> list[dict]:
+    """Dépenses 30 jours par carte comparées au plafond de la carte."""
+    ref = reference_date()
+    if ref is None:
+        return []
+    return query(
+        """
+        SELECT k.card_id, k.card_brand, k.card_type, k.card_number_masked, k.credit_limit,
+               coalesce(sum(t.amount) FILTER (WHERE t.amount > 0), 0) AS depenses_30j
+        FROM cards k
+        LEFT JOIN transactions t ON t.card_id = k.card_id AND t.tx_date > %(ref)s::timestamp - interval '30 days'
+        WHERE k.client_id = %(cid)s
+        GROUP BY k.card_id ORDER BY k.card_id
+        """,
+        {"cid": client_id, "ref": ref},
+    )
