@@ -237,7 +237,6 @@ const LEVELS = ["critique", "attention", "info", "positif"];
 const HL_CLASSES = ["agent-hl", ...LEVELS.map((l) => `hl-${l}`)];
 const METRIC_COLOR = { critique: "text-red-700", attention: "text-amber-700", info: "text-sky-700", positif: "text-emerald-700" };
 const PIE_COLORS = ["#0b4a36", "#c9a45c", "#2f7d5f", "#e6d5ae", "#6aa58b", "#8a6d32", "#a7c9b8", "#64748b"];
-const motion = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 const level = (l) => (LEVELS.includes(l) ? l : "info");
 
 function resetAgentCanvas() {
@@ -267,7 +266,6 @@ function agentPanel(title, bodyHtml, note, onClose) {
     panel.remove();
   });
   $("agent-canvas").prepend(panel);
-  panel.scrollIntoView({ behavior: motion(), block: "nearest" });
   return panel;
 }
 
@@ -342,7 +340,6 @@ function highlight(ui) {
   note.className = "agent-note";
   note.textContent = ui.message || "";
   el.appendChild(note);
-  el.scrollIntoView({ behavior: motion(), block: "center" });
 }
 
 function applyUi(ui) {
@@ -358,6 +355,12 @@ function renderSuggestions() {
   $("suggestions").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => send(b.textContent)));
 }
 
+// Follows the stream only while the advisor is already at the bottom: a scrolled-up chat never moves on its own
+function scrollChat(force = false) {
+  const m = $("messages");
+  if (force || m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
+}
+
 function addMessage(role, html) {
   const div = document.createElement("div");
   div.className = role === "user" ? "flex justify-end" : "";
@@ -365,7 +368,7 @@ function addMessage(role, html) {
     ? `<div class="bubble-user">${html}</div>`
     : `<div class="flex gap-2 items-start"><img src="/logo.png" alt="" class="w-7 h-7 shrink-0 mt-0.5"><div class="bubble-assistant prose-chat min-w-0 flex-1">${html}</div></div>`;
   $("messages").appendChild(div);
-  $("messages").scrollTop = $("messages").scrollHeight;
+  scrollChat(true);
   return div;
 }
 
@@ -373,8 +376,6 @@ function renderAnswer(answer) {
   const md = answer.replace(/\[([^\]\n]{1,80})\](?!\()/g, '<span class="source-tag">$1</span>');
   return DOMPurify.sanitize(marked.parse(md));
 }
-
-const scrollChat = () => ($("messages").scrollTop = $("messages").scrollHeight);
 
 // Assistant bubble in 4 zones: step chips, thoughts, live text, footer (latency)
 function assistantBubble(clientId) {
@@ -461,7 +462,7 @@ function assistantBubble(clientId) {
 }
 
 async function send(message, brief = false) {
-  if (!state.clientId || state.busy) return;
+  if (state.clientId == null || state.busy) return; // client #0 is a valid id
   const text = (message ?? "").trim();
   if (!brief && !text) {
     showError("Type a question first");
