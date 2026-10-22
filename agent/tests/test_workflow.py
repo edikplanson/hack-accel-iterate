@@ -92,3 +92,17 @@ def test_unrelated_product_document_is_not_presented_as_procedure(records,monkey
     monkeypatch.setattr(documents,'get_repository',lambda:type('Docs',(),{'search':lambda *args,**kwargs:result})())
     answer=run_guidance(state(),lambda *_:None)
     assert 'Procédure non vérifiée' in answer.text and '[unrelated]' not in answer.text
+
+
+def test_actual_demo_pdf_scope_and_page_citations(records,monkeypatch):
+    from pathlib import Path
+    from agent.app import documents
+    monkeypatch.setenv('DOCUMENT_DIR',str(Path(__file__).parents[1]/'demo-documents'))
+    monkeypatch.setattr(documents,'get_repository',documents.DocumentationRepository)
+    answer=run_guidance(state('Je souhaite un rachat partiel assurance-vie.'),lambda *_:None)
+    sources=[s for s in answer.sources if s.kind=='document']
+    assert sources and all(s.page and s.version=='demo-1' and s.fictional for s in sources)
+    assert 'Document FICTIF' in answer.text and 'p. ' in answer.text
+    card_answer=run_guidance(state(),lambda *_:None)
+    assert not any(s.kind=='document' for s in card_answer.sources)
+    assert 'Procédure non vérifiée' in card_answer.text

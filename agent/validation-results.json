@@ -1,0 +1,53 @@
+{
+  "checked_at": "2026-10-22",
+  "environment": "local Docker; synthetic PostgreSQL + fictional OpenSearch PDF",
+  "session_id": "1db44995-af6a-4453-a1c0-23bc19d011fc",
+  "thread_id": "client-825-34d322066ca8",
+  "last_event_id": 137,
+  "chat_latency_s": 0.219,
+  "reported_latency_s": 0.21,
+  "document_sources": 2,
+  "model_enabled": false,
+  "anthropic_requests": 0,
+  "checks": [
+    "unconfirmed identity hides facts",
+    "advisor confirmation",
+    "page/version citations",
+    "duplicate event",
+    "corrected turn",
+    "identity conflict hides facts",
+    "separate tokens",
+    "SSE framing",
+    "Last-Event-ID replay",
+    "frontend response parity",
+    "cross-client thread refusal",
+    "PostgreSQL sessions/events survive container replacement"
+  ],
+  "demo_metadata_blocker": false,
+  "container_replacement_recovery": true,
+  "tests": {
+    "passed": 42,
+    "duration_s": 6.92,
+    "source": "tracked agent files only",
+    "includes_real_local_postgresql": true,
+    "command": "PYTHONPATH=. python -m pytest -q agent/tests; TEST_DATABASE_URL set to dedicated localhost copilot_main_agent_test"
+  },
+  "docker_image": "sha256:c07b2034b3cd0bda2e392e24baca24d419be59eb14c6cae9ca47d8b73bc0e404",
+  "pdf_ingestion": {
+    "first_status": "published",
+    "repeat_status": "unchanged",
+    "chunks": 3,
+    "corpus_hash": "2c0234960f4e1a444aa4ffa868bfae7a0d1b2e7c85d6578d6a835323b178bd1f",
+    "alias": "banking-agent-procedures"
+  },
+  "recorded_model_usage_rows": 0,
+  "estimated_application_inference_usd": 0,
+  "coding_agent_billing": "not exposed by tooling",
+  "unverified": [
+    "Aiven managed PostgreSQL/OpenSearch and verified remote TLS",
+    "Aiven Runtime deployment",
+    "served frontend browser journey",
+    "live Claude synthesis",
+    "20-scenario same-model grounded/no-data evaluation"
+  ]
+}
