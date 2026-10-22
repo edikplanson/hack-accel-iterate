@@ -28,6 +28,15 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const eur = (v) => (v == null ? "n/a" : new Intl.NumberFormat(LOCALE, { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v));
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString(LOCALE) : "n/a");
+const initials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+const last4 = (masked) => (String(masked || "").match(/(\d{4})\s*$/) || [null, "••••"])[1];
+const fmtExpiry = (v) => (v ? new Date(v).toLocaleDateString(LOCALE, { month: "2-digit", year: "2-digit" }) : "--/--");
+
+if (window.Chart) {
+  Chart.defaults.font.family = '"Inter", ui-sans-serif, system-ui, sans-serif';
+  Chart.defaults.color = "#5b6b63";
+  Chart.defaults.borderColor = "rgba(11, 61, 46, .08)";
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -80,14 +89,17 @@ async function loadClients(q = "") {
   try {
     const clients = await api(`/clients?limit=100${q ? `&q=${encodeURIComponent(q)}` : ""}`);
     list.innerHTML = clients.map((c) => `
-      <li class="client-item px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${c.client_id === state.clientId ? "active" : ""}"
+      <li class="client-item flex items-center gap-3 px-4 py-3 cursor-pointer ${c.client_id === state.clientId ? "active" : ""}"
           data-id="${c.client_id}">
-        <div class="flex items-center gap-2">
-          <span class="font-medium client-name">${esc(c.nom || `Client #${c.client_id}`)}</span>
-          ${c.card_compromised ? '<span class="w-2 h-2 rounded-full bg-red-500" title="Compromised card"></span>' : ""}
-          <span class="ml-auto text-xs text-slate-400">#${c.client_id}</span>
+        <div class="avatar">${esc(initials(c.nom))}</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-medium truncate client-name">${esc(c.nom || `Client #${c.client_id}`)}</span>
+            ${c.card_compromised ? '<span class="w-2 h-2 shrink-0 rounded-full bg-red-500" title="Compromised card"></span>' : ""}
+            <span class="ml-auto text-[11px] text-slate-400 tabular-nums">#${c.client_id}</span>
+          </div>
+          <div class="text-xs text-slate-500">${esc(c.age)} y/o · score ${esc(c.credit_score)} · ${esc(c.nb_cards)} card(s)</div>
         </div>
-        <div class="text-xs text-slate-500">${esc(c.age)} y/o · score ${esc(c.credit_score)} · ${esc(c.nb_cards)} card(s)</div>
       </li>`).join("") || '<li class="p-4 text-slate-400">No clients</li>';
     list.querySelectorAll("li[data-id]").forEach((li) => li.addEventListener("click", () => selectClient(Number(li.dataset.id))));
   } catch (e) {
@@ -117,7 +129,7 @@ async function selectClient(id) {
   renderSuggestions();
 
   const main = $("dashboard");
-  main.innerHTML = '<div class="text-slate-400">Loading…</div>';
+  main.innerHTML = '<div class="h-full grid place-items-center text-slate-400"><span class="dots"><span>●</span><span>●</span><span>●</span></span></div>';
   try {
     const [d, monthly] = await Promise.all([api(`/clients/${id}`), api(`/clients/${id}/monthly?months=12`)]);
     renderDashboard(d, monthly);
@@ -130,42 +142,56 @@ function renderDashboard(d, monthly) {
   const p = d.profil, k = d.kpis;
   const alerts = d.alertes.length
     ? d.alertes.map((a) => `
-        <div class="border rounded-lg px-3 py-2 text-sm flex items-center gap-2 ${LEVEL_STYLE[a.niveau] || LEVEL_STYLE.info}">
+        <div class="alert-row border rounded-xl px-4 py-2.5 text-sm flex items-center gap-2 ${LEVEL_STYLE[a.niveau] || LEVEL_STYLE.info}">
           <span class="font-medium">${esc(LEVEL_LABEL[a.niveau] || a.niveau)}</span><span>${esc(a.message)}</span>
           <span class="ml-auto text-xs opacity-70">${esc(a.source)}</span>
         </div>`).join("")
     : '<div class="text-sm text-slate-400">No alerts</div>';
 
-  const cards = d.cartes.map((c) => `
-      <div class="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 text-sm">
-        <div>
-          <div class="font-medium">${esc(c.card_brand)} ${esc(c.card_type)} ${esc(c.card_number_masked)}</div>
-          <div class="text-xs text-slate-500">Expires ${fmtDate(c.expires)} · limit ${eur(c.credit_limit)}</div>
+  const cards = d.cartes.map((c) => {
+    const status = c.card_on_dark_web ? ["compromised", "Compromised"] : c.expired ? ["expired", "Expired"] : ["active", "Active"];
+    const brand = String(c.card_brand || "").toLowerCase().replace(/[^a-z]/g, "");
+    return `
+      <div class="bank-card bc-${esc(brand)} is-${status[0]}">
+        <div class="flex items-start justify-between">
+          <span class="bc-brand">${esc(c.card_brand)}</span>
+          <span class="bc-status">${status[1]}</span>
         </div>
-        ${c.card_on_dark_web ? '<span class="text-xs text-red-600 font-medium">Compromised</span>' : c.expired ? '<span class="text-xs text-slate-400">Expired</span>' : '<span class="text-xs text-emerald-700">Active</span>'}
-      </div>`).join("");
+        <div class="bc-chip"></div>
+        <div class="bc-number">•••• •••• •••• ${esc(last4(c.card_number_masked))}</div>
+        <div class="flex items-end justify-between gap-2">
+          <div><div class="bc-label">${esc(c.card_type)}</div><div class="bc-value">exp. ${fmtExpiry(c.expires)}</div></div>
+          <div class="text-right"><div class="bc-label">Limit</div><div class="bc-value">${eur(c.credit_limit)}</div></div>
+        </div>
+      </div>`;
+  }).join("");
 
   const cats = d.categories_30j.map((c) => `
-      <div class="flex justify-between py-1 text-sm"><span class="truncate pr-2">${esc(c.categorie)}</span><span class="font-medium">${eur(c.total)}</span></div>`).join("")
+      <div class="flex justify-between py-2 text-sm border-b border-dashed border-slate-200 last:border-0"><span class="truncate pr-2 text-slate-600">${esc(c.categorie)}</span><span class="font-semibold tabular-nums">${eur(c.total)}</span></div>`).join("")
     || '<div class="text-sm text-slate-400">No spending over the period</div>';
 
   const tx = d.dernieres_transactions.map((t) => `
-      <tr class="border-b border-slate-100 last:border-0">
-        <td class="py-1.5">${fmtDate(t.tx_date)}</td>
-        <td class="py-1.5 truncate max-w-[220px]">${esc(t.categorie)}</td>
-        <td class="py-1.5">${esc(t.merchant_city)}</td>
-        <td class="py-1.5 text-right ${t.amount < 0 ? "text-emerald-700" : ""}">${eur(t.amount)}</td>
-        <td class="py-1.5 text-xs text-red-600">${esc(t.errors || "")}</td>
+      <tr>
+        <td class="text-slate-500 tabular-nums">${fmtDate(t.tx_date)}</td>
+        <td class="truncate max-w-[220px]">${esc(t.categorie)}</td>
+        <td class="text-slate-500">${esc(t.merchant_city)}</td>
+        <td class="text-right font-medium tabular-nums ${t.amount < 0 ? "text-emerald-700" : ""}">${eur(t.amount)}</td>
+        <td>${t.errors ? `<span class="tx-error">${esc(t.errors)}</span>` : ""}</td>
       </tr>`).join("");
 
   // data-section values are the section ids the agent targets with ui_highlight: keep them as is
   $("dashboard").innerHTML = `
-    <div class="flex items-end gap-3">
-      <div>
-        <h1 class="text-2xl font-semibold">${esc(p.nom || `Client #${p.client_id}`)}</h1>
-        <div class="text-sm text-slate-500">Client #${p.client_id} · ${esc(p.age)} y/o · ${esc(p.gender)} · ${esc(p.address)}</div>
+    <div class="hero">
+      <div class="avatar avatar-lg">${esc(initials(p.nom))}</div>
+      <div class="min-w-0">
+        <div class="hero-eyebrow">Client file · #${p.client_id}</div>
+        <h1 class="hero-name">${esc(p.nom || `Client #${p.client_id}`)}</h1>
+        <div class="hero-meta">${esc(p.age)} y/o · ${esc(p.gender)} · ${esc(p.address)}</div>
       </div>
-      <div class="ml-auto text-xs text-slate-400">Data as of ${fmtDate(k.date_reference)}</div>
+      <div class="ml-auto text-right shrink-0">
+        <div class="hero-eyebrow">Data as of</div>
+        <div class="hero-date">${fmtDate(k.date_reference)}</div>
+      </div>
     </div>
 
     <div id="agent-canvas" class="agent-viz space-y-4"></div>
@@ -181,21 +207,28 @@ function renderDashboard(d, monthly) {
 
     <div class="space-y-2" data-section="alertes">${alerts}</div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <div class="card" id="section-cartes" data-section="cartes"><div class="font-semibold mb-2">Cards</div>${cards || '<div class="text-sm text-slate-400">No cards</div>'}</div>
-      <div class="card" data-section="categories"><div class="font-semibold mb-2">Top spending, 30 days</div>${cats}</div>
+    <div class="card" id="section-cartes" data-section="cartes"><div class="section-title">Cards</div>
+      ${cards ? `<div class="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-4">${cards}</div>` : '<div class="text-sm text-slate-400">No cards</div>'}</div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_1.5fr] gap-4">
+      <div class="card" data-section="categories"><div class="section-title">Top spending, 30 days</div>${cats}</div>
+      <div class="card" data-section="mensuel"><div class="section-title">Monthly spending</div><div class="h-56"><canvas id="monthly-chart"></canvas></div></div>
     </div>
 
-    <div class="card" data-section="mensuel"><div class="font-semibold mb-2">Monthly spending</div><div class="h-56"><canvas id="monthly-chart"></canvas></div></div>
-
-    <div class="card overflow-x-auto" data-section="transactions"><div class="font-semibold mb-2">Recent transactions</div>
-      <table class="w-full text-sm"><tbody>${tx}</tbody></table></div>`;
+    <div class="card overflow-x-auto" data-section="transactions"><div class="section-title">Recent transactions</div>
+      <table class="tx-table w-full text-sm">
+        <thead><tr><th>Date</th><th>Category</th><th>City</th><th class="text-right">Amount</th><th>Status</th></tr></thead>
+        <tbody>${tx}</tbody></table></div>`;
 
   if (state.chart) state.chart.destroy();
   state.chart = new Chart($("monthly-chart"), {
     type: "bar",
-    data: { labels: monthly.map((m) => m.mois), datasets: [{ data: monthly.map((m) => m.depenses), backgroundColor: "#047857", borderRadius: 4, maxBarThickness: 48 }] },
-    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (v) => eur(v) } } } },
+    data: { labels: monthly.map((m) => m.mois), datasets: [{ data: monthly.map((m) => m.depenses), backgroundColor: "#0b4a36", hoverBackgroundColor: "#c9a45c", borderRadius: 6, maxBarThickness: 40 }] },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => eur(c.parsed.y) } } },
+      scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => eur(v) } } },
+    },
   });
 }
 
@@ -203,7 +236,7 @@ function renderDashboard(d, monthly) {
 const LEVELS = ["critique", "attention", "info", "positif"];
 const HL_CLASSES = ["agent-hl", ...LEVELS.map((l) => `hl-${l}`)];
 const METRIC_COLOR = { critique: "text-red-700", attention: "text-amber-700", info: "text-sky-700", positif: "text-emerald-700" };
-const PIE_COLORS = ["#047857", "#10b981", "#6ee7b7", "#0ea5e9", "#f59e0b", "#ef4444", "#8b5cf6", "#64748b"];
+const PIE_COLORS = ["#0b4a36", "#c9a45c", "#2f7d5f", "#e6d5ae", "#6aa58b", "#8a6d32", "#a7c9b8", "#64748b"];
 const motion = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 const level = (l) => (LEVELS.includes(l) ? l : "info");
 
@@ -254,8 +287,10 @@ function showChart(ui) {
       datasets: [{
         label: ui.series_label || ui.title || "",
         data: ui.values || [],
-        backgroundColor: pie ? PIE_COLORS : type === "line" ? "rgba(4,120,87,.12)" : "#047857",
-        borderColor: pie ? "#fff" : "#047857",
+        backgroundColor: pie ? PIE_COLORS : type === "line" ? "rgba(11,74,54,.10)" : "#0b4a36",
+        borderColor: pie ? "#fff" : "#0b4a36",
+        pointBackgroundColor: "#c9a45c",
+        pointRadius: type === "line" ? 4 : 0,
         fill: type === "line",
         tension: 0.35,
         borderRadius: type === "bar" ? 4 : 0,
@@ -263,8 +298,8 @@ function showChart(ui) {
       }, ...(Array.isArray(ui.values2) ? [{
         label: ui.series_label2 || "",
         data: ui.values2,
-        backgroundColor: "#a7f3d0",
-        borderColor: "#6ee7b7",
+        backgroundColor: "#e6d5ae",
+        borderColor: "#c9a45c",
         borderRadius: 4,
         maxBarThickness: 48,
       }] : [])],
@@ -319,7 +354,7 @@ function applyUi(ui) {
 /* ---------- Chat ---------- */
 function renderSuggestions() {
   $("suggestions").innerHTML = SUGGESTIONS.map((s) =>
-    `<button class="text-xs border border-slate-200 rounded-full px-3 py-1 hover:bg-slate-50">${esc(s)}</button>`).join("");
+    `<button class="suggestion">${esc(s)}</button>`).join("");
   $("suggestions").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => send(b.textContent)));
 }
 
@@ -327,8 +362,8 @@ function addMessage(role, html) {
   const div = document.createElement("div");
   div.className = role === "user" ? "flex justify-end" : "";
   div.innerHTML = role === "user"
-    ? `<div class="bg-slate-900 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%]">${html}</div>`
-    : `<div class="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-sm px-3 py-2 prose-chat">${html}</div>`;
+    ? `<div class="bubble-user">${html}</div>`
+    : `<div class="flex gap-2 items-start"><img src="/logo.png" alt="" class="w-7 h-7 shrink-0 mt-0.5"><div class="bubble-assistant prose-chat min-w-0 flex-1">${html}</div></div>`;
   $("messages").appendChild(div);
   $("messages").scrollTop = $("messages").scrollHeight;
   return div;
@@ -476,6 +511,10 @@ $("search").addEventListener("input", (e) => {
 
 fetch("/health/agent").then((r) => r.json()).then((h) => {
   $("status").textContent = h.db ? "Database connected" : "Database unreachable";
-}).catch(() => ($("status").textContent = "Agent unreachable"));
+  $("status").classList.toggle("down", !h.db);
+}).catch(() => {
+  $("status").textContent = "Agent unreachable";
+  $("status").classList.add("down");
+});
 
 loadClients();
