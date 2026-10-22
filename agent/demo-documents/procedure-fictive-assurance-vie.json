@@ -1,0 +1,12 @@
+{
+  "document_id": "demo-assurance-vie",
+  "title": "DEMO FICTIVE - Guide conseiller banque de demonstration",
+  "version": "demo-1",
+  "effective_date": "2026-01-01",
+  "fictional": true,
+  "applicability": "Contrats d'assurance-vie et entretiens fictifs de demonstration uniquement",
+  "rules": {
+    "demo.transaction_execution": "interdite",
+    "demo.identity": "confirmation conseiller requise"
+  }
+}
