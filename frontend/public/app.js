@@ -2,14 +2,14 @@ const API = "/api";
 const state = { clientId: null, threadId: null, chart: null, agentCharts: [], busy: false, abort: null };
 
 const TOOL_LABELS = {
-  get_client_profile: "Profil",
-  get_cards: "Cartes",
-  get_spending_summary: "Dépenses",
-  get_recent_transactions: "Transactions",
-  get_client_alerts: "Alertes",
-  search_bank_rules: "Règles internes",
-  get_bank_rule: "Article de règle",
-  run_readonly_sql: "Requête SQL",
+  get_client_profile: "PostgreSQL · Profil",
+  get_cards: "PostgreSQL · Cartes",
+  get_spending_summary: "PostgreSQL · Dépenses",
+  get_recent_transactions: "PostgreSQL · Transactions",
+  get_client_alerts: "PostgreSQL · Alertes",
+  search_bank_rules: "Vérification des règles internes",
+  get_bank_rule: "Lecture d'un article de règle",
+  run_readonly_sql: "Requête PostgreSQL",
   ui_show_chart: "Graphique",
   ui_highlight: "Mise en avant",
   ui_show_table: "Tableau",
@@ -164,21 +164,21 @@ function renderDashboard(d, monthly) {
       <div class="ml-auto text-xs text-slate-400">Données au ${dateFr(k.date_reference)}</div>
     </div>
 
-    <div id="agent-canvas" class="space-y-4"></div>
+    <div id="agent-canvas" class="agent-viz space-y-4"></div>
 
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
-      <div class="card" data-section="revenu"><div class="kpi-label">Revenu annuel</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
-      <div class="card" data-section="dette"><div class="kpi-label">Dette totale</div><div class="kpi-value">${eur(p.total_debt)}</div>
+      <div class="card" id="kpi-revenu" data-section="revenu"><div class="kpi-label">Revenu annuel</div><div class="kpi-value">${eur(p.yearly_income)}</div></div>
+      <div class="card" id="kpi-dette" data-section="dette"><div class="kpi-label">Dette totale</div><div class="kpi-value">${eur(p.total_debt)}</div>
         <div class="text-xs text-slate-500 mt-1">${p.debt_to_income_ratio == null ? "n/d" : p.debt_to_income_ratio.toLocaleString("fr-FR")} fois le revenu annuel</div></div>
-      <div class="card" data-section="score"><div class="kpi-label">Score de crédit</div><div class="kpi-value">${esc(p.credit_score)}</div></div>
-      <div class="card" data-section="depenses"><div class="kpi-label">Dépenses 30 jours</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
+      <div class="card" id="kpi-score" data-section="score"><div class="kpi-label">Score de crédit</div><div class="kpi-value">${esc(p.credit_score)}</div></div>
+      <div class="card" id="kpi-depenses" data-section="depenses"><div class="kpi-label">Dépenses 30 jours</div><div class="kpi-value">${eur(k.depenses_30j)}</div>
         <div class="text-xs text-slate-500 mt-1">${esc(k.transactions_30j)} opérations · ${esc(k.incidents_30j)} incident(s)</div></div>
     </div>
 
     <div class="space-y-2" data-section="alertes">${alerts}</div>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <div class="card" data-section="cartes"><div class="font-semibold mb-2">Cartes</div>${cards || '<div class="text-sm text-slate-400">Aucune carte</div>'}</div>
+      <div class="card" id="section-cartes" data-section="cartes"><div class="font-semibold mb-2">Cartes</div>${cards || '<div class="text-sm text-slate-400">Aucune carte</div>'}</div>
       <div class="card" data-section="categories"><div class="font-semibold mb-2">Top dépenses 30 jours</div>${cats}</div>
     </div>
 
@@ -237,6 +237,7 @@ function agentPanel(title, bodyHtml, note, onClose) {
 function showChart(ui) {
   const pie = ui.chart_type === "pie";
   const type = ["bar", "line", "pie"].includes(ui.chart_type) ? ui.chart_type : "bar";
+  const fmt = (v) => (ui.unit === "count" ? String(v) : eur(v));
   let chart = null;
   const panel = agentPanel(ui.title, '<div class="h-56"><canvas></canvas></div>', ui.note, () => {
     chart.destroy();
@@ -252,18 +253,26 @@ function showChart(ui) {
         backgroundColor: pie ? PIE_COLORS : type === "line" ? "rgba(4,120,87,.12)" : "#047857",
         borderColor: pie ? "#fff" : "#047857",
         fill: type === "line",
-        tension: 0.3,
+        tension: 0.35,
         borderRadius: type === "bar" ? 4 : 0,
         maxBarThickness: 48,
-      }],
+      }, ...(Array.isArray(ui.values2) ? [{
+        label: ui.series_label2 || "",
+        data: ui.values2,
+        backgroundColor: "#a7f3d0",
+        borderColor: "#6ee7b7",
+        borderRadius: 4,
+        maxBarThickness: 48,
+      }] : [])],
     },
     options: {
       maintainAspectRatio: false,
+      animation: { duration: 1200, easing: "easeOutQuart" },
       plugins: {
-        legend: { display: pie, position: "right" },
-        tooltip: pie ? {} : { callbacks: { label: (c) => eur(c.parsed.y) } },
+        legend: { display: pie || Array.isArray(ui.values2), position: pie ? "right" : "top" },
+        tooltip: pie ? {} : { callbacks: { label: (c) => (fmt(c.parsed.y)) } },
       },
-      scales: pie ? {} : { y: { ticks: { callback: (v) => eur(v) } } },
+      scales: pie ? {} : { y: { beginAtZero: true, ticks: { callback: (v) => fmt(v) } } },
     },
   });
   state.agentCharts.push(chart);
@@ -371,6 +380,7 @@ function assistantBubble(clientId) {
       chip.className = `step-chip running${d.tool.startsWith("ui_") ? " ui" : ""}`;
       chip.innerHTML = '<span class="lbl"></span><span class="st">…</span>';
       chip.querySelector(".lbl").textContent = TOOL_LABELS[d.tool] || d.tool;
+      chip.dataset.tool = d.tool;
       z(".b-steps").appendChild(chip);
       chips.set(d.id, chip);
       scrollChat();
@@ -378,6 +388,11 @@ function assistantBubble(clientId) {
     step_done: (d) => {
       const chip = chips.get(d.id);
       if (!chip) return;
+      if (!d.ok && ["search_bank_rules", "get_bank_rule"].includes(chip.dataset.tool)) {
+        console.warn("Règles internes indisponibles", d); // pas de badge d'erreur dans l'UI
+        chip.remove();
+        return;
+      }
       chip.classList.remove("running");
       chip.classList.toggle("fail", !d.ok);
       chip.querySelector(".st").textContent = d.ok ? "✓" : "✗";
@@ -415,6 +430,8 @@ async function send(message, brief = false) {
   }
   showError("");
   clearHighlights();
+  resetAgentCanvas();
+  if ($("agent-canvas")) $("agent-canvas").innerHTML = "";
   state.busy = true;
   state.abort = new AbortController();
   $("send-btn").disabled = $("brief-btn").disabled = true;
