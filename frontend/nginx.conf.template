@@ -5,9 +5,14 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Résolution DNS de l'agent à la requête (et non au démarrage) : si l'agent n'est pas encore
+    # joignable, nginx démarre quand même au lieu de planter en "host not found in upstream"
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=30s ipv6=off;
+    set $agent_url ${AGENT_URL};
+
     # Appels API relayés vers le conteneur agent (même origine, pas de CORS)
     location /api/ {
-        proxy_pass ${AGENT_URL};
+        proxy_pass $agent_url;
         proxy_http_version 1.1;
         proxy_ssl_server_name on;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -15,7 +20,7 @@ server {
     }
 
     location = /health/agent {
-        proxy_pass ${AGENT_URL}/health;
+        proxy_pass $agent_url/health;
         proxy_ssl_server_name on;
     }
 

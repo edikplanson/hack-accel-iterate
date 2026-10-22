@@ -4,7 +4,8 @@ FROM nginx:1.27-alpine
 # URL publique de l'app agent sur Aiven Runtime si les deux apps ne partagent pas de réseau)
 ENV PORT=8080 \
     AGENT_URL=http://agent:8000 \
-    NGINX_ENVSUBST_FILTER="^(PORT|AGENT_URL)$"
+    NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    NGINX_ENVSUBST_FILTER="^(PORT|AGENT_URL|NGINX_LOCAL_RESOLVERS)$"
 
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY public /usr/share/nginx/html
